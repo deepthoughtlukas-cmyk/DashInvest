@@ -1,4 +1,15 @@
-import type { AssetId, Candle, ElliottDegree, MacroOverview, Timeframe } from '../../shared/types.ts';
+import {
+  DEFAULT_CATALOG_BY_SYMBOL,
+  inferAssetClass,
+  resolveCanonicalSymbol,
+} from '../../shared/catalog.ts';
+import type {
+  AssetClass,
+  Candle,
+  ElliottDegree,
+  MacroOverview,
+  Timeframe,
+} from '../../shared/types.ts';
 import {
   calculateEMA,
   calculateSMA,
@@ -43,7 +54,7 @@ export interface MacroRegimeEvaluation {
 
 export interface SignalEvent {
   id: string;
-  assetId: AssetId;
+  assetId: string;
   time: number;
   title: string;
   detail: string;
@@ -52,7 +63,9 @@ export interface SignalEvent {
 }
 
 export interface FullAssetAnalysis {
-  assetId: AssetId;
+  assetId: string;
+  symbol: string;
+  assetClass: AssetClass;
   timeframe: Timeframe;
   latestPrice: number;
   ema9: TimeValue[];
@@ -245,7 +258,8 @@ export function evaluateMacroRegime(macro: MacroOverview): MacroRegimeEvaluation
 }
 
 function computeAssetMacroScore(
-  assetId: AssetId,
+  symbol: string,
+  assetClass: AssetClass,
   macro: MacroOverview | undefined,
   macroRegime: MacroRegimeEvaluation | null,
 ): number {
@@ -258,29 +272,50 @@ function computeAssetMacroScore(
   const y10 = (pMap.get('us10y') ?? 0) * 50;
   const dxy = (pMap.get('dxy') ?? 0) * 50;
 
-  switch (assetId) {
-    case 'GOLD':
-      // Gold thrives on falling DXY, falling/capped yields, expanding M2 & Net Liquidity
+  if (symbol === 'SI=F') {
+    return clampScore(dxy * 0.3 + nl * 0.25 + m2 * 0.2 + y10 * 0.15 + cs * 0.1);
+  }
+  if (symbol === '^NDX') {
+    return clampScore(nl * 0.35 + y10 * 0.3 + cs * 0.2 + dxy * 0.15);
+  }
+
+  switch (assetClass) {
+    case 'precious_metals':
       return clampScore(dxy * 0.35 + y10 * 0.25 + m2 * 0.25 + nl * 0.15);
-    case 'SILVER':
-      // Silver combines precious-metal monetary sensitivity with cyclical/liquidity beta
-      return clampScore(dxy * 0.3 + nl * 0.25 + m2 * 0.2 + y10 * 0.15 + cs * 0.1);
-    case 'NASDAQ100':
-      // Long-duration growth: highly sensitive to Net Liquidity, 10Y Yields, and Credit Spreads
-      return clampScore(nl * 0.35 + y10 * 0.3 + cs * 0.2 + dxy * 0.15);
-    case 'SP500':
-      // Broad equity index: anchored by Net Liquidity, Credit Spreads, M2, and 10Y
+    case 'commodities':
+      return clampScore(dxy * 0.3 + m2 * 0.25 + nl * 0.25 + cs * 0.2);
+    case 'crypto':
+      // Crypto behaves as high-beta global liquidity & M2 proxy
+      return clampScore(nl * 0.4 + m2 * 0.3 + dxy * 0.15 + cs * 0.15);
+    case 'bonds':
+      // Bond ETFs (TLT/HYG) benefit from falling yields (positive y10 score) and calm spreads
+      return clampScore(y10 * 0.55 + cs * 0.25 + nl * 0.1 + m2 * 0.1);
+    case 'forex':
+      // Non-USD pairs (e.g. EUR/USD) benefit from falling DXY (positive dxy score)
+      return clampScore(dxy * 0.6 + y10 * 0.2 + nl * 0.2);
+    case 'equities':
+    case 'etf':
+      return clampScore(nl * 0.35 + y10 * 0.25 + cs * 0.25 + dxy * 0.15);
+    case 'indices':
+    default:
       return clampScore(nl * 0.35 + cs * 0.3 + m2 * 0.15 + y10 * 0.1 + dxy * 0.1);
   }
 }
 
 export function runFullAssetAnalysis(
-  assetId: AssetId,
+  symbolOrId: string,
   candles: Candle[],
   macro: MacroOverview | undefined,
   timeframe: Timeframe,
   elliottDegree: ElliottDegree = 'intermediate',
+  explicitAssetClass?: AssetClass,
 ): FullAssetAnalysis {
+  const symbol = resolveCanonicalSymbol(symbolOrId);
+  const assetId = symbolOrId;
+  const assetClass =
+    explicitAssetClass ??
+    DEFAULT_CATALOG_BY_SYMBOL.get(symbol)?.assetClass ??
+    inferAssetClass(symbol);
   const latestPrice = candles[candles.length - 1]?.close ?? 0;
   const isIntraday = timeframe === '15m' || timeframe === '1h' || timeframe === '4h';
 
@@ -357,7 +392,7 @@ export function runFullAssetAnalysis(
   const chartTechScore = clampScore(chartRaw);
 
   const macroRegime = macro ? evaluateMacroRegime(macro) : null;
-  const macroScore = computeAssetMacroScore(assetId, macro, macroRegime);
+  const macroScore = computeAssetMacroScore(symbol, assetClass, macro, macroRegime);
 
   const confluence = clampScore(
     trendScore * 0.35 + momentumScore * 0.2 + chartTechScore * 0.25 + macroScore * 0.2,
@@ -468,6 +503,8 @@ export function runFullAssetAnalysis(
 
   return {
     assetId,
+    symbol,
+    assetClass,
     timeframe,
     latestPrice,
     ema9,

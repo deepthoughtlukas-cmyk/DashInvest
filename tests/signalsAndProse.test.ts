@@ -263,4 +263,25 @@ describe('Signals & German Prose Analysis Engine', () => {
     expect(bearReport.subheadline).toContain('4-Stunden-Chart');
     expect(bearReport.conclusions[3].text).toContain('Defensiv');
   });
+
+  it('supports arbitrary catalog asset classes (crypto, equities, bonds) in analysis & prose reports', () => {
+    const macro = buildExpansionMacro();
+    const regime = evaluateMacroRegime(macro);
+    const bullCandles = buildTrendCandles('up', 220);
+
+    for (const [symbol, name, assetClass] of [
+      ['BTC-USD', 'Bitcoin USD', 'crypto'],
+      ['NVDA', 'NVIDIA Corporation', 'equities'],
+      ['TLT', 'iShares 20+ Year Treasury Bond ETF', 'bonds'],
+    ] as const) {
+      const analysis = runFullAssetAnalysis(symbol, bullCandles, macro, '1d', 'intermediate', assetClass);
+      expect(analysis.assetClass).toBe(assetClass);
+      expect(analysis.scores.confluence).toBeGreaterThanOrEqual(-100);
+      expect(analysis.scores.confluence).toBeLessThanOrEqual(100);
+
+      const report = generateAssetProseReport(name, '1d', undefined, analysis, regime);
+      expect(report.headline).toContain(name);
+      expect(report.conclusions).toHaveLength(4);
+    }
+  });
 });

@@ -15,22 +15,28 @@ import {
 } from 'lightweight-charts';
 import {
   Crosshair,
+  FolderOpen,
   Maximize2,
   Minimize2,
   PenTool,
   RefreshCw,
+  Star,
   Trash2,
   TrendingUp,
 } from 'lucide-react';
 import {
-  ASSET_META,
-  type AssetId,
-  type Candle,
-  type ChartStyle,
-  type ElliottDegree,
-  type MacroOverview,
-  type QuoteSummary,
-  type Timeframe,
+  DEFAULT_CATALOG_BY_SYMBOL,
+  inferAssetClass,
+  inferDecimals,
+  resolveCanonicalSymbol,
+} from '../../../shared/catalog.ts';
+import type {
+  Candle,
+  ChartStyle,
+  ElliottDegree,
+  MacroOverview,
+  QuoteSummary,
+  Timeframe,
 } from '../../../shared/types.ts';
 import { useDashboardStore } from '../../store/dashboardStore.ts';
 import { useAssetCandlesQuery } from '../../hooks/useMarketData.ts';
@@ -41,13 +47,13 @@ import { FibonacciPrimitive } from './primitives/FibonacciPrimitive.ts';
 import { ElliottWavePrimitive } from './primitives/ElliottWavePrimitive.ts';
 
 interface AdvancedChartProps {
-  lockedAsset?: AssetId;
+  lockedSymbol?: string;
   macro?: MacroOverview;
   quoteMap: Map<string, QuoteSummary>;
   compact?: boolean;
+  onOpenCatalog?: () => void;
 }
 
-const ASSET_TABS: AssetId[] = ['GOLD', 'SILVER', 'SP500', 'NASDAQ100'];
 const TIMEFRAMES: Array<{ id: Timeframe; label: string }> = [
   { id: '15m', label: '15m' },
   { id: '1h', label: '1H' },
@@ -63,21 +69,24 @@ const fmtPrice = (val: number, decimals = 2) =>
   }).format(val);
 
 export const AdvancedChart: React.FC<AdvancedChartProps> = ({
-  lockedAsset,
+  lockedSymbol,
   macro,
   quoteMap,
   compact = false,
+  onOpenCatalog,
 }) => {
   const {
-    activeAsset,
+    activeSymbol,
     activeTimeframe,
     refreshIntervalMs,
     chartSettings,
     manualFibs,
-    setActiveAsset,
+    catalogAssets,
+    setActiveSymbol,
     setActiveTimeframe,
     updateChartSetting,
     setManualFib,
+    toggleBookmark,
   } = useDashboardStore();
 
   const [localTimeframe, setLocalTimeframe] = useState<Timeframe>(activeTimeframe);
@@ -93,20 +102,63 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
     adx: number | null;
   } | null>(null);
 
-  const assetId = lockedAsset ?? activeAsset;
-  const tf = lockedAsset ? localTimeframe : activeTimeframe;
-  const meta = ASSET_META[assetId];
+  const symbol = resolveCanonicalSymbol(lockedSymbol ?? activeSymbol);
+  const tf = lockedSymbol ? localTimeframe : activeTimeframe;
 
-  const candlesQuery = useAssetCandlesQuery(assetId, tf, refreshIntervalMs);
+  const catalogEntry = useMemo(
+    () => catalogAssets.find((a) => a.symbol === symbol) ?? DEFAULT_CATALOG_BY_SYMBOL.get(symbol),
+    [catalogAssets, symbol],
+  );
+
+  const candlesQuery = useAssetCandlesQuery(symbol, tf, refreshIntervalMs);
   const candles = candlesQuery.data?.candles ?? [];
-  const quote = candlesQuery.data?.quote ?? quoteMap.get(assetId);
+  const quote = candlesQuery.data?.quote ?? quoteMap.get(symbol);
+
+  const meta = useMemo(() => {
+    const assetClass = catalogEntry?.assetClass ?? inferAssetClass(symbol);
+    return {
+      symbol,
+      name: catalogEntry?.name ?? quote?.name ?? symbol,
+      shortName: catalogEntry?.shortName ?? quote?.shortName ?? symbol,
+      decimals: catalogEntry?.decimals ?? quote?.decimals ?? inferDecimals(symbol, assetClass),
+      unit: catalogEntry?.unit ?? quote?.unit ?? 'USD',
+      assetClass,
+      bookmarked: catalogEntry?.bookmarked ?? false,
+      inCatalog: catalogAssets.some((a) => a.symbol === symbol),
+    };
+  }, [catalogEntry, catalogAssets, quote, symbol]);
+
+  const quickTabs = useMemo(() => {
+    const bookmarked = catalogAssets.filter((a) => a.bookmarked);
+    const tabs = [...bookmarked];
+    if (!tabs.some((a) => a.symbol === symbol)) {
+      tabs.push({
+        symbol,
+        name: meta.name,
+        shortName: meta.shortName,
+        assetClass: meta.assetClass,
+        unit: meta.unit,
+        decimals: meta.decimals,
+        folderId: '',
+        bookmarked: false,
+      });
+    }
+    return tabs;
+  }, [catalogAssets, symbol, meta]);
 
   const analysis = useMemo(() => {
     if (candles.length === 0) return null;
-    return runFullAssetAnalysis(assetId, candles, macro, tf, chartSettings.elliottDegree);
-  }, [assetId, candles, macro, tf, chartSettings.elliottDegree]);
+    return runFullAssetAnalysis(
+      symbol,
+      candles,
+      macro,
+      tf,
+      chartSettings.elliottDegree,
+      meta.assetClass,
+    );
+  }, [symbol, candles, macro, tf, chartSettings.elliottDegree, meta.assetClass]);
 
-  const manualPair = manualFibs[assetId] ?? null;
+  const manualPair = manualFibs[symbol] ?? null;
   const manualFibAnalysis = useMemo(() => {
     if (!manualPair || candles.length === 0) return null;
     const lastPrice = candles[candles.length - 1].close;
@@ -120,10 +172,10 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
 
   const drawStepRef = useRef(drawStep);
   const pendingStartRef = useRef(pendingStart);
-  const assetIdRef = useRef(assetId);
+  const symbolRef = useRef(symbol);
   drawStepRef.current = drawStep;
   pendingStartRef.current = pendingStart;
-  assetIdRef.current = assetId;
+  symbolRef.current = symbol;
 
   useEffect(() => {
     const container = isFullscreen ? fullscreenHostRef.current : chartHostRef.current;
@@ -565,7 +617,7 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
         setPendingStart(anchor);
         setDrawStep('pick_end');
       } else if (mode === 'pick_end' && pendingStartRef.current) {
-        setManualFib(assetIdRef.current, {
+        setManualFib(symbolRef.current, {
           start: pendingStartRef.current,
           end: anchor,
         });
@@ -596,7 +648,7 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
       mainSeriesRef.current = null;
     };
   }, [
-    assetId,
+    symbol,
     tf,
     candles,
     analysis,
@@ -637,36 +689,69 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
     <div className="flex h-full flex-col overflow-hidden bg-[#0b111c]">
       {/* Asset & Live Price Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 px-3 py-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {!lockedAsset ? (
-            ASSET_TABS.map((id) => {
-              const q = quoteMap.get(id);
-              const active = id === assetId;
-              const up = (q?.changePercent ?? 0) >= 0;
-              return (
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
+          {!lockedSymbol ? (
+            <>
+              {quickTabs.map((item) => {
+                const q = quoteMap.get(item.symbol);
+                const active = item.symbol === symbol;
+                const up = (q?.changePercent ?? 0) >= 0;
+                return (
+                  <button
+                    key={item.symbol}
+                    type="button"
+                    onClick={() => setActiveSymbol(item.symbol)}
+                    className={`widget-no-drag flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition ${
+                      active
+                        ? 'border-sky-500/60 bg-sky-500/15 text-slate-100'
+                        : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className="font-semibold">{item.shortName}</span>
+                    {q && (
+                      <span className="font-mono-num text-[11px] text-slate-300">
+                        {fmtPrice(q.price, item.decimals)}
+                        <span className={`ml-1 ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {up ? '+' : ''}
+                          {q.changePercent.toFixed(2)}%
+                        </span>
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {meta.inCatalog && (
                 <button
-                  key={id}
                   type="button"
-                  onClick={() => setActiveAsset(id)}
-                  className={`widget-no-drag flex items-center gap-2 rounded-lg border px-2.5 py-1 text-xs transition ${
-                    active
-                      ? 'border-sky-500/60 bg-sky-500/15 text-slate-100'
-                      : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                  onClick={() => toggleBookmark(symbol)}
+                  title={
+                    meta.bookmarked
+                      ? `${meta.shortName} aus Bookmarks entfernen`
+                      : `${meta.shortName} bookmarken`
+                  }
+                  className={`widget-no-drag shrink-0 rounded-lg border p-1 transition ${
+                    meta.bookmarked
+                      ? 'border-amber-500/50 bg-amber-500/15 text-amber-300'
+                      : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-amber-300'
                   }`}
                 >
-                  <span className="font-semibold">{ASSET_META[id].shortName}</span>
-                  {q && (
-                    <span className="font-mono-num text-[11px] text-slate-300">
-                      {fmtPrice(q.price, ASSET_META[id].decimals)}
-                      <span className={`ml-1 ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {up ? '+' : ''}
-                        {q.changePercent.toFixed(2)}%
-                      </span>
-                    </span>
-                  )}
+                  <Star className={`h-3.5 w-3.5 ${meta.bookmarked ? 'fill-amber-400' : ''}`} />
                 </button>
-              );
-            })
+              )}
+
+              {onOpenCatalog && (
+                <button
+                  type="button"
+                  onClick={onOpenCatalog}
+                  title="Wertpapier-Katalog öffnen"
+                  className="widget-no-drag flex shrink-0 items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/70 px-2 py-1 text-[11px] font-medium text-slate-300 transition hover:border-sky-500/50 hover:text-sky-200"
+                >
+                  <FolderOpen className="h-3.5 w-3.5 text-sky-400" />
+                  Katalog
+                </button>
+              )}
+            </>
           ) : (
             <div className="flex items-center gap-2.5">
               <span className="text-sm font-semibold text-slate-100">{meta.name}</span>
@@ -697,7 +782,7 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() =>
-                  lockedAsset ? setLocalTimeframe(item.id) : setActiveTimeframe(item.id)
+                  lockedSymbol ? setLocalTimeframe(item.id) : setActiveTimeframe(item.id)
                 }
                 className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
                   tf === item.id
@@ -853,7 +938,7 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
           {manualPair && (
             <button
               type="button"
-              onClick={() => setManualFib(assetId, null)}
+              onClick={() => setManualFib(symbol, null)}
               title="Manuelles Fibonacci entfernen"
               className="rounded border border-rose-500/40 bg-rose-500/10 p-0.5 text-rose-300 hover:bg-rose-500/20"
             >

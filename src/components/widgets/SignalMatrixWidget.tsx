@@ -1,16 +1,15 @@
 import React from 'react';
 import { Activity, ArrowUpRight, ArrowDownRight, AlertTriangle } from 'lucide-react';
-import { ASSET_META, type AssetId, type QuoteSummary } from '../../../shared/types.ts';
+import type { CatalogAsset, QuoteSummary } from '../../../shared/types.ts';
 import type { FullAssetAnalysis, MacroRegimeEvaluation, SignalEvent } from '../../engine/signals.ts';
 import { useDashboardStore } from '../../store/dashboardStore.ts';
 
 interface SignalMatrixWidgetProps {
+  focusAssets: CatalogAsset[];
   quoteMap: Map<string, QuoteSummary>;
-  dailyAnalyses: Partial<Record<AssetId, FullAssetAnalysis>>;
+  dailyAnalyses: Record<string, FullAssetAnalysis>;
   macroRegime: MacroRegimeEvaluation | null;
 }
-
-const CORE_ASSETS: AssetId[] = ['GOLD', 'SILVER', 'SP500', 'NASDAQ100'];
 
 const fmt = (n: number, d = 2) =>
   new Intl.NumberFormat('de-DE', {
@@ -19,15 +18,18 @@ const fmt = (n: number, d = 2) =>
   }).format(n);
 
 export const SignalMatrixWidget: React.FC<SignalMatrixWidgetProps> = ({
+  focusAssets,
   quoteMap,
   dailyAnalyses,
   macroRegime,
 }) => {
-  const { activeAsset, setActiveAsset, setProseTab } = useDashboardStore();
+  const { activeSymbol, catalogAssets, setActiveSymbol, setProseTab } = useDashboardStore();
+
+  const nameBySymbol = new Map(catalogAssets.map((a) => [a.symbol, a.shortName]));
 
   const allSignals: SignalEvent[] = [];
-  for (const id of CORE_ASSETS) {
-    const an = dailyAnalyses[id];
+  for (const item of focusAssets) {
+    const an = dailyAnalyses[item.symbol];
     if (an) {
       allSignals.push(...an.signals.slice(0, 3));
     }
@@ -36,22 +38,21 @@ export const SignalMatrixWidget: React.FC<SignalMatrixWidgetProps> = ({
 
   return (
     <div className="flex h-full flex-col gap-2.5 overflow-y-auto pr-0.5">
-      {/* Cross-Asset Confluence Matrix */}
+      {/* Bookmarked / Focus Cross-Asset Confluence Matrix */}
       <div className="space-y-1.5">
-        {CORE_ASSETS.map((id) => {
-          const meta = ASSET_META[id];
-          const q = quoteMap.get(id);
-          const an = dailyAnalyses[id];
+        {focusAssets.map((item) => {
+          const q = quoteMap.get(item.symbol);
+          const an = dailyAnalyses[item.symbol];
           const score = an?.scores.confluence ?? 0;
-          const isSelected = activeAsset === id;
+          const isSelected = activeSymbol === item.symbol;
           const isUp = (q?.changePercent ?? 0) >= 0;
 
           return (
             <button
-              key={id}
+              key={item.symbol}
               type="button"
               onClick={() => {
-                setActiveAsset(id);
+                setActiveSymbol(item.symbol);
                 setProseTab('asset');
               }}
               className={`widget-no-drag flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left transition ${
@@ -62,7 +63,10 @@ export const SignalMatrixWidget: React.FC<SignalMatrixWidgetProps> = ({
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-semibold text-slate-100">{meta.shortName}</span>
+                  <span className="truncate text-xs font-semibold text-slate-100">
+                    {item.shortName}
+                  </span>
+                  <span className="font-mono-num text-[9.5px] text-slate-500">{item.symbol}</span>
                   {an?.fibonacci?.inGoldenPocket && (
                     <span className="rounded bg-amber-500/20 px-1 py-0.2 text-[9.5px] font-medium text-amber-300">
                       GP
@@ -70,7 +74,7 @@ export const SignalMatrixWidget: React.FC<SignalMatrixWidgetProps> = ({
                   )}
                 </div>
                 <div className="font-mono-num text-[11px] text-slate-400">
-                  {q ? fmt(q.price, meta.decimals) : an ? fmt(an.latestPrice, meta.decimals) : '—'}
+                  {q ? fmt(q.price, item.decimals) : an ? fmt(an.latestPrice, item.decimals) : '—'}
                   {q && (
                     <span className={`ml-1.5 ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {isUp ? '+' : ''}
@@ -139,11 +143,11 @@ export const SignalMatrixWidget: React.FC<SignalMatrixWidgetProps> = ({
           Aktive Markt-Signale (1D)
         </div>
         <div className="space-y-1.5">
-          {allSignals.slice(0, 7).map((sig) => (
+          {allSignals.slice(0, 8).map((sig) => (
             <button
               key={sig.id}
               type="button"
-              onClick={() => setActiveAsset(sig.assetId)}
+              onClick={() => setActiveSymbol(sig.assetId)}
               className="widget-no-drag flex w-full items-start gap-2 rounded-md border border-slate-800/70 bg-slate-900/40 px-2 py-1.5 text-left transition hover:border-slate-700"
             >
               {sig.severity === 'bullish' ? (
@@ -155,7 +159,9 @@ export const SignalMatrixWidget: React.FC<SignalMatrixWidgetProps> = ({
               )}
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-200">
-                  <span className="text-sky-300">{ASSET_META[sig.assetId].shortName}</span>
+                  <span className="text-sky-300">
+                    {nameBySymbol.get(sig.assetId) ?? sig.assetId}
+                  </span>
                   <span>·</span>
                   <span className="truncate">{sig.title}</span>
                 </div>

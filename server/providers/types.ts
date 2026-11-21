@@ -1,10 +1,17 @@
-import type { AssetId, Candle, MacroPoint, QuoteId, QuoteSummary, Timeframe } from '../../shared/types.ts';
+import type {
+  Candle,
+  MacroPoint,
+  QuoteSummary,
+  SymbolSearchResult,
+  Timeframe,
+} from '../../shared/types.ts';
 
 export interface MarketDataProvider {
   name: string;
-  getCandles(id: QuoteId, timeframe: Timeframe): Promise<Candle[]>;
-  getQuote(id: QuoteId): Promise<QuoteSummary>;
-  getDailyHistory(id: AssetId | 'DXY' | 'US10Y', range?: string): Promise<MacroPoint[]>;
+  getCandles(symbolOrId: string, timeframe: Timeframe): Promise<Candle[]>;
+  getQuote(symbolOrId: string): Promise<QuoteSummary>;
+  getDailyHistory(symbolOrId: string, range?: string): Promise<MacroPoint[]>;
+  searchSymbols(query: string): Promise<SymbolSearchResult[]>;
 }
 
 export interface MacroDataProvider {

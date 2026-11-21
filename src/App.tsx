@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { FolderTree, X } from 'lucide-react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useDashboardStore } from './store/dashboardStore.ts';
 import { useDashboardIntelligence } from './hooks/useMarketData.ts';
 import { TopBar } from './components/layout/TopBar.tsx';
 import { DashboardGrid } from './components/layout/DashboardGrid.tsx';
+import { CatalogExplorerWidget } from './components/widgets/CatalogExplorerWidget.tsx';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -16,8 +18,15 @@ const queryClient = new QueryClient({
 
 const DashboardWorkspace: React.FC = () => {
   const qc = useQueryClient();
-  const { activeAsset, activeTimeframe, refreshIntervalMs, chartSettings } =
-    useDashboardStore();
+  const {
+    activeSymbol,
+    catalogAssets,
+    activeTimeframe,
+    refreshIntervalMs,
+    chartSettings,
+  } = useDashboardStore();
+
+  const [catalogDrawerOpen, setCatalogDrawerOpen] = useState(false);
 
   const {
     quotesQuery,
@@ -25,11 +34,13 @@ const DashboardWorkspace: React.FC = () => {
     activeCandlesQuery,
     quoteMap,
     macroRegime,
+    focusAssets,
     dailyAnalyses,
     macroProseReport,
     assetProseReport,
   } = useDashboardIntelligence(
-    activeAsset,
+    activeSymbol,
+    catalogAssets,
     activeTimeframe,
     chartSettings.elliottDegree,
     refreshIntervalMs,
@@ -49,6 +60,7 @@ const DashboardWorkspace: React.FC = () => {
         onRefreshAll={() => {
           void qc.invalidateQueries();
         }}
+        onOpenCatalog={() => setCatalogDrawerOpen(true)}
       />
 
       <main className="mx-auto max-w-[1920px]">
@@ -56,12 +68,43 @@ const DashboardWorkspace: React.FC = () => {
           macro={macroQuery.data}
           macroLoading={macroQuery.isLoading}
           quoteMap={quoteMap}
+          focusAssets={focusAssets}
           dailyAnalyses={dailyAnalyses}
           macroRegime={macroRegime}
           macroProseReport={macroProseReport}
           assetProseReport={assetProseReport}
+          onOpenCatalog={() => setCatalogDrawerOpen(true)}
         />
       </main>
+
+      {catalogDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex justify-start bg-black/65 backdrop-blur-xs">
+          <div className="flex h-full w-full max-w-md flex-col border-r border-slate-800 bg-[#0f1623] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <FolderTree className="h-4 w-4 text-amber-400" />
+                <h2 className="text-sm font-semibold text-slate-100">
+                  Wertpapier-Katalog &amp; Ordner verwalten
+                </h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Katalog-Drawer schließen"
+                onClick={() => setCatalogDrawerOpen(false)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden p-3">
+              <CatalogExplorerWidget
+                quoteMap={quoteMap}
+                onAssetSelected={() => setCatalogDrawerOpen(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

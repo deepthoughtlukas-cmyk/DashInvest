@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Activity,
+  FolderOpen,
   LayoutGrid,
   Lock,
   Plus,
@@ -18,6 +19,7 @@ interface TopBarProps {
   updatedAt?: string;
   isFetching: boolean;
   onRefreshAll: () => void;
+  onOpenCatalog: () => void;
 }
 
 const PRESETS: Array<{ id: PresetId; label: string }> = [
@@ -31,10 +33,12 @@ export const TopBar: React.FC<TopBarProps> = ({
   updatedAt,
   isFetching,
   onRefreshAll,
+  onOpenCatalog,
 }) => {
   const {
     activePreset,
     activeWidgets,
+    catalogAssets,
     layoutLocked,
     applyPreset,
     toggleWidget,
@@ -92,7 +96,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           )}
         </div>
 
-        {/* Center/Right: Presets + Widget Controls + Refresh */}
+        {/* Center/Right: Presets + Catalog + Widget Controls + Refresh */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center rounded-lg border border-slate-800 bg-slate-900/80 p-0.5">
             {PRESETS.map((p) => (
@@ -110,6 +114,15 @@ export const TopBar: React.FC<TopBarProps> = ({
               </button>
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={onOpenCatalog}
+            className="flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/12 px-2.5 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/22"
+          >
+            <FolderOpen className="h-3.5 w-3.5 text-amber-300" />
+            Katalog ({catalogAssets.length})
+          </button>
 
           <button
             type="button"

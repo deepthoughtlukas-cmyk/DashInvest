@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Check,
   Compass,
@@ -11,7 +11,6 @@ import {
   Target,
   TrendingUp,
 } from 'lucide-react';
-import { ASSET_META, type AssetId } from '../../../shared/types.ts';
 import type { ProseConclusion, ProseReport } from '../../engine/proseAnalysis.ts';
 import { useDashboardStore } from '../../store/dashboardStore.ts';
 
@@ -20,8 +19,6 @@ interface ProseAnalysisWidgetProps {
   assetReport: ProseReport | null;
   isLoading: boolean;
 }
-
-const ASSETS: AssetId[] = ['GOLD', 'SILVER', 'SP500', 'NASDAQ100'];
 
 function ConclusionIcon({ type }: { type: ProseConclusion['type'] }) {
   switch (type) {
@@ -55,16 +52,27 @@ export const ProseAnalysisWidget: React.FC<ProseAnalysisWidgetProps> = ({
   isLoading,
 }) => {
   const {
-    activeAsset,
+    activeSymbol,
+    catalogAssets,
     proseTab,
     proseDepth,
-    setActiveAsset,
+    setActiveSymbol,
     setProseTab,
     setProseDepth,
   } = useDashboardStore();
 
   const [copied, setCopied] = useState(false);
   const [readerOpen, setReaderOpen] = useState(false);
+
+  const quickAssets = useMemo(() => {
+    const bookmarked = catalogAssets.filter((a) => a.bookmarked);
+    const list = [...bookmarked];
+    const activeItem = catalogAssets.find((a) => a.symbol === activeSymbol);
+    if (activeItem && !list.some((a) => a.symbol === activeItem.symbol)) {
+      list.unshift(activeItem);
+    }
+    return list.length > 0 ? list : catalogAssets.slice(0, 6);
+  }, [catalogAssets, activeSymbol]);
 
   const report = proseTab === 'macro' ? macroReport : assetReport;
 
@@ -168,18 +176,18 @@ export const ProseAnalysisWidget: React.FC<ProseAnalysisWidgetProps> = ({
       {/* Asset Quick Pills when in Asset tab */}
       {proseTab === 'asset' && (
         <div className="widget-no-drag flex flex-wrap items-center gap-1">
-          {ASSETS.map((id) => (
+          {quickAssets.map((item) => (
             <button
-              key={id}
+              key={item.symbol}
               type="button"
-              onClick={() => setActiveAsset(id)}
+              onClick={() => setActiveSymbol(item.symbol)}
               className={`rounded-md border px-2 py-0.5 text-[11px] font-medium transition ${
-                activeAsset === id
+                activeSymbol === item.symbol
                   ? 'border-sky-500/50 bg-sky-500/15 text-sky-300'
                   : 'border-slate-800 bg-slate-900/50 text-slate-400 hover:text-slate-200'
               }`}
             >
-              {ASSET_META[id].shortName}
+              {item.shortName}
             </button>
           ))}
         </div>

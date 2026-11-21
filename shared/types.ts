@@ -1,8 +1,49 @@
 export type AssetId = 'GOLD' | 'SILVER' | 'SP500' | 'NASDAQ100';
-export type QuoteId = AssetId | 'DXY' | 'US10Y';
+export type QuoteId = AssetId | 'DXY' | 'US10Y' | string;
 export type Timeframe = '15m' | '1h' | '4h' | '1d' | '1w';
 export type ChartStyle = 'candles' | 'heikin_ashi' | 'line';
 export type ElliottDegree = 'minor' | 'intermediate' | 'primary';
+
+export type AssetClass =
+  | 'precious_metals'
+  | 'commodities'
+  | 'indices'
+  | 'equities'
+  | 'crypto'
+  | 'forex'
+  | 'bonds'
+  | 'etf';
+
+export interface CatalogAsset {
+  symbol: string;
+  name: string;
+  shortName: string;
+  assetClass: AssetClass;
+  unit: string;
+  decimals: number;
+  exchange?: string;
+  folderId: string;
+  bookmarked: boolean;
+}
+
+export interface AssetFolder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  color?: string;
+  collapsed?: boolean;
+}
+
+export interface SymbolSearchResult {
+  symbol: string;
+  name: string;
+  shortName: string;
+  quoteType: string;
+  exchange: string;
+  assetClass: AssetClass;
+  decimals: number;
+  unit: string;
+}
 
 export interface Candle {
   time: number; // Unix seconds (UTC)
@@ -14,7 +55,7 @@ export interface Candle {
 }
 
 export interface QuoteSummary {
-  id: QuoteId;
+  id: string;
   symbol: string;
   name: string;
   shortName: string;
@@ -35,7 +76,8 @@ export interface QuoteSummary {
 }
 
 export interface AssetCandlesResponse {
-  assetId: AssetId;
+  assetId: string;
+  symbol: string;
   timeframe: Timeframe;
   quote: QuoteSummary;
   candles: Candle[];

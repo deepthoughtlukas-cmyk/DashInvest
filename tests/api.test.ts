@@ -1,11 +1,17 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AssetId, Candle, MacroPoint, QuoteId, QuoteSummary, Timeframe } from '../shared/types.ts';
+import type {
+  Candle,
+  MacroPoint,
+  QuoteSummary,
+  SymbolSearchResult,
+  Timeframe,
+} from '../shared/types.ts';
 import type { MacroDataProvider, MarketDataProvider } from '../server/providers/types.ts';
 import { createApp } from '../server/app.ts';
 
-function buildMockQuote(id: QuoteId, price: number): QuoteSummary {
+function buildMockQuote(id: string, price: number): QuoteSummary {
   return {
     id,
     symbol: id,
@@ -56,18 +62,45 @@ describe('Express API Integration (/api/*)', () => {
 
   const mockYahoo: MarketDataProvider = {
     name: 'MockYahoo',
-    async getQuote(id: QuoteId) {
-      if (id === 'US10Y') return buildMockQuote(id, 4.45);
-      if (id === 'DXY') return buildMockQuote(id, 103.2);
-      return buildMockQuote(id, 3500);
+    async getQuote(symbolOrId: string) {
+      if (symbolOrId === 'FAIL-SYM') {
+        throw new Error('Upstream symbol not found');
+      }
+      if (symbolOrId === 'US10Y' || symbolOrId === '^TNX') return buildMockQuote(symbolOrId, 4.45);
+      if (symbolOrId === 'DXY' || symbolOrId === 'DX-Y.NYB') {
+        return buildMockQuote(symbolOrId, 103.2);
+      }
+      if (symbolOrId === 'NVDA') return buildMockQuote('NVDA', 125.5);
+      return buildMockQuote(symbolOrId, 3500);
     },
-    async getCandles(_id: QuoteId, _tf: Timeframe) {
+    async getCandles(_symbolOrId: string, _tf: Timeframe) {
       return buildMockCandles(50);
     },
-    async getDailyHistory(id: AssetId | 'DXY' | 'US10Y') {
-      if (id === 'DXY') return buildDailySeries(105, -0.01, 220);
-      if (id === 'SP500') return buildDailySeries(6200, 3, 220);
+    async getDailyHistory(symbolOrId: string) {
+      if (symbolOrId === 'DXY' || symbolOrId === 'DX-Y.NYB') {
+        return buildDailySeries(105, -0.01, 220);
+      }
+      if (symbolOrId === 'SP500' || symbolOrId === '^GSPC') {
+        return buildDailySeries(6200, 3, 220);
+      }
       return buildDailySeries(3100, 2, 220);
+    },
+    async searchSymbols(query: string): Promise<SymbolSearchResult[]> {
+      if (query.toLowerCase().includes('nvidia')) {
+        return [
+          {
+            symbol: 'NVDA',
+            name: 'NVIDIA Corporation',
+            shortName: 'NVIDIA',
+            quoteType: 'EQUITY',
+            exchange: 'NASDAQ',
+            assetClass: 'equities',
+            decimals: 2,
+            unit: 'USD',
+          },
+        ];
+      }
+      return [];
     },
   };
 
@@ -119,38 +152,47 @@ describe('Express API Integration (/api/*)', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('serves /api/health, /api/market/quotes, and /api/market/candles/:assetId', async () => {
+  it('serves /api/health, /api/market/search, batch quotes with partial failures, and multi-asset candles', async () => {
     const healthRes = await fetch(`${baseUrl}/api/health`);
     expect(healthRes.status).toBe(200);
-    const healthJson = (await healthRes.json()) as { ok: boolean; service: string };
-    expect(healthJson.ok).toBe(true);
-    expect(healthJson.service).toBe('dashinvest-api');
 
-    const quotesRes = await fetch(`${baseUrl}/api/market/quotes`);
-    expect(quotesRes.status).toBe(200);
-    const quotesJson = (await quotesRes.json()) as { quotes: QuoteSummary[] };
-    expect(quotesJson.quotes.map((q) => q.id)).toEqual([
-      'GOLD',
-      'SILVER',
-      'SP500',
-      'NASDAQ100',
-      'DXY',
-      'US10Y',
-    ]);
+    // Search endpoint
+    const searchRes = await fetch(`${baseUrl}/api/market/search?q=Nvidia`);
+    expect(searchRes.status).toBe(200);
+    const searchJson = (await searchRes.json()) as { results: SymbolSearchResult[] };
+    expect(searchJson.results[0].symbol).toBe('NVDA');
 
-    const candlesRes = await fetch(`${baseUrl}/api/market/candles/NASDAQ100?tf=4h`);
-    expect(candlesRes.status).toBe(200);
-    const candlesJson = (await candlesRes.json()) as {
-      assetId: string;
-      timeframe: string;
-      candles: Candle[];
-    };
-    expect(candlesJson.assetId).toBe('NASDAQ100');
-    expect(candlesJson.timeframe).toBe('4h');
-    expect(candlesJson.candles).toHaveLength(50);
+    // Batch quotes with partial failure tolerance
+    const batchRes = await fetch(
+      `${baseUrl}/api/market/quotes?symbols=${encodeURIComponent('GC=F,NVDA,FAIL-SYM')}`,
+    );
+    expect(batchRes.status).toBe(200);
+    const batchJson = (await batchRes.json()) as { quotes: QuoteSummary[]; failed: string[] };
+    expect(batchJson.quotes.map((q) => q.symbol)).toEqual(['GC=F', 'NVDA']);
+    expect(batchJson.failed).toEqual(['FAIL-SYM']);
 
-    const invalidRes = await fetch(`${baseUrl}/api/market/candles/UNKNOWN`);
-    expect(invalidRes.status).toBe(400);
+    // Default quotes (no symbols param)
+    const defaultQuotesRes = await fetch(`${baseUrl}/api/market/quotes`);
+    expect(defaultQuotesRes.status).toBe(200);
+    const defaultQuotesJson = (await defaultQuotesRes.json()) as { quotes: QuoteSummary[] };
+    expect(defaultQuotesJson.quotes).toHaveLength(6);
+
+    // Candles via query param (arbitrary symbol NVDA) & legacy path param
+    const nvdaRes = await fetch(`${baseUrl}/api/market/candles?symbol=NVDA&tf=1d`);
+    expect(nvdaRes.status).toBe(200);
+    const nvdaJson = (await nvdaRes.json()) as { symbol: string; candles: Candle[] };
+    expect(nvdaJson.symbol).toBe('NVDA');
+    expect(nvdaJson.candles).toHaveLength(50);
+
+    const ndxRes = await fetch(`${baseUrl}/api/market/candles/NASDAQ100?tf=4h`);
+    expect(ndxRes.status).toBe(200);
+    const ndxJson = (await ndxRes.json()) as { symbol: string; timeframe: string };
+    expect(ndxJson.symbol).toBe('^NDX');
+    expect(ndxJson.timeframe).toBe('4h');
+
+    // Invalid ticker syntax rejected with 400
+    const badRes = await fetch(`${baseUrl}/api/market/candles?symbol=${encodeURIComponent('BAD SYMBOL!')}`);
+    expect(badRes.status).toBe(400);
   });
 
   it('serves unit-normalized /api/macro/overview and falls back to stale cache when upstream fails', async () => {
@@ -174,7 +216,6 @@ describe('Express API Integration (/api/*)', () => {
     expect(overview.us10y.yieldPercent).toBe(4.45);
     expect(overview.comparisons.sp500.length).toBeGreaterThan(100);
 
-    // Wait past 25ms TTL and trigger upstream failure -> should return 200 with stale: true
     await new Promise((r) => setTimeout(r, 40));
     shouldFailMacro = true;
     const res2 = await fetch(`${baseUrl}/api/macro/overview`);

@@ -4,15 +4,16 @@ import { getPresetLayouts, useDashboardStore } from '../src/store/dashboardStore
 describe('Dashboard Zustand Store & Presets', () => {
   beforeEach(() => {
     useDashboardStore.setState({
-      activeAsset: 'GOLD',
+      activeSymbol: 'GC=F',
       activeTimeframe: '1d',
       activePreset: 'analyse-fokus',
       activeWidgets: [
+        'catalog-explorer',
         'master-chart',
         'prose-briefing',
+        'signal-matrix',
         'macro-liquidity',
         'macro-credit',
-        'signal-matrix',
         'macro-dxy',
         'macro-m2',
         'macro-us10y',
@@ -27,7 +28,7 @@ describe('Dashboard Zustand Store & Presets', () => {
 
   it('switches presets cleanly across analyse-fokus, multi-chart, and makro-cockpit', () => {
     const store = useDashboardStore.getState();
-    expect(store.activeWidgets).toHaveLength(8);
+    expect(store.activeWidgets).toHaveLength(9);
 
     store.applyPreset('multi-chart');
     const afterMulti = useDashboardStore.getState();
@@ -57,27 +58,27 @@ describe('Dashboard Zustand Store & Presets', () => {
     store.resetCurrentPreset();
     expect(useDashboardStore.getState().activeWidgets).toContain('macro-m2');
 
-    store.setActiveAsset('NASDAQ100');
+    store.setActiveSymbol('NASDAQ100');
     store.setActiveTimeframe('4h');
     store.setLayoutLocked(true);
     store.setProseTab('asset');
     store.setProseDepth('compact');
     store.updateChartSetting('showIchimoku', true);
-    store.setManualFib('NASDAQ100', {
+    store.setManualFib('^NDX', {
       start: { time: 100, price: 24000 },
       end: { time: 200, price: 26000 },
     });
 
     const updated = useDashboardStore.getState();
-    expect(updated.activeAsset).toBe('NASDAQ100');
+    expect(updated.activeSymbol).toBe('^NDX');
     expect(updated.activeTimeframe).toBe('4h');
     expect(updated.layoutLocked).toBe(true);
     expect(updated.proseTab).toBe('asset');
     expect(updated.proseDepth).toBe('compact');
     expect(updated.chartSettings.showIchimoku).toBe(true);
-    expect(updated.manualFibs.NASDAQ100?.end.price).toBe(26000);
+    expect(updated.manualFibs['^NDX']?.end.price).toBe(26000);
 
-    updated.setManualFib('NASDAQ100', null);
-    expect(useDashboardStore.getState().manualFibs.NASDAQ100).toBeUndefined();
+    updated.setManualFib('^NDX', null);
+    expect(useDashboardStore.getState().manualFibs['^NDX']).toBeUndefined();
   });
 });

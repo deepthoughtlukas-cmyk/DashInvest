@@ -9,10 +9,17 @@ export interface WidgetDefinition {
 }
 
 export const WIDGET_REGISTRY: Record<WidgetId, WidgetDefinition> = {
+  'catalog-explorer': {
+    id: 'catalog-explorer',
+    title: 'Wertpapier-Katalog & Bookmarks',
+    subtitle: 'Ordnerstruktur, Favoriten & globale Tickersuche (Aktien, ETFs, Krypto, Rohstoffe)',
+    category: 'Charts',
+    badge: 'Katalog',
+  },
   'master-chart': {
     id: 'master-chart',
     title: 'Master Chart Terminal',
-    subtitle: 'Gold, Silber, S&P 500 & Nasdaq 100 inkl. Fib, Elliott & Indikatoren',
+    subtitle: 'Alle Katalog- & Bookmark-Werte inkl. Fib, Elliott & Indikatoren',
     category: 'Charts',
     badge: 'Interaktiv',
   },
@@ -50,7 +57,7 @@ export const WIDGET_REGISTRY: Record<WidgetId, WidgetDefinition> = {
   'signal-matrix': {
     id: 'signal-matrix',
     title: 'Confluence-Matrix & Signale',
-    subtitle: 'Score-Übersicht aller 4 Kern-Assets & Live-Signal-Feed',
+    subtitle: 'Score-Übersicht deiner Bookmarks & Live-Signal-Feed',
     category: 'Analyse & Signale',
   },
   'macro-liquidity': {

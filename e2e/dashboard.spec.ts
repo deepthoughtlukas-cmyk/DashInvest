@@ -26,7 +26,6 @@ function attachErrorListeners(page: Page) {
 
 async function waitForDashboardReady(page: Page) {
   await page.goto('/');
-  // Ensure clean initial localStorage state for deterministic runs
   await page.waitForSelector('header');
   await expect(page.getByText(/Makro:/)).toBeVisible({ timeout: 25_000 });
   await expect(page.getByText('Fed-Bilanz (WALCL)')).toBeVisible({ timeout: 25_000 });
@@ -55,7 +54,7 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     const errors = attachErrorListeners(page);
     await waitForDashboardReady(page);
 
-    // 1. US Net Liquidity widget (defaults to S&P 500 overlay, switchable to Gold & Aus)
+    // 1. US Net Liquidity widget
     const liquidityCard = widgetCard(page, 'US-Marktliquidität (Fed Net Liquidity)');
     await expect(liquidityCard).toBeVisible();
     await expect(liquidityCard.getByText('Fed-Bilanz (WALCL)')).toBeVisible();
@@ -107,22 +106,17 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     const errors = attachErrorListeners(page);
     await waitForDashboardReady(page);
 
-    const chartCard = page.locator('.react-grid-item', {
-      hasText: 'Master Chart Terminal',
-    });
+    const chartCard = widgetCard(page, 'Master Chart Terminal');
     await expect(chartCard).toBeVisible();
 
-    // Verify Lightweight Charts canvases have real dimensions
     const canvasBox = await chartCard.locator('canvas').first().boundingBox();
     expect(canvasBox).not.toBeNull();
     expect(canvasBox!.width).toBeGreaterThan(300);
     expect(canvasBox!.height).toBeGreaterThan(150);
 
-    // Status strip shows Golden Pocket & Confluence Score
     await expect(chartCard.getByText(/GP:/)).toBeVisible();
     await expect(chartCard.getByText(/Score [+-]?\d+/)).toBeVisible();
 
-    // Switch through Silber, S&P 500, Nasdaq 100 and change timeframe to 4H then back to 1D
     for (const assetLabel of ['Silber', 'S&P 500', 'Nasdaq 100']) {
       await chartCard.getByRole('button', { name: new RegExp(`^${assetLabel}`) }).click();
       await expect(chartCard.locator('canvas').first()).toBeVisible();
@@ -132,7 +126,6 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     await expect(chartCard.locator('canvas').first()).toBeVisible();
     await chartCard.getByRole('button', { name: '1D', exact: true }).click();
 
-    // Back to Gold & test Chart style, LOG, overlays, and sub-panes
     await chartCard.getByRole('button', { name: /^Gold/ }).click();
     await chartCard.getByLabel('Chart-Darstellung').selectOption('heikin_ashi');
     await chartCard.getByLabel('Chart-Darstellung').selectOption('candles');
@@ -145,7 +138,6 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     await chartCard.getByLabel('Elliott Grad').selectOption('minor');
     await chartCard.getByLabel('Elliott Grad').selectOption('intermediate');
 
-    // Manual Fibonacci 2-click drawing tool
     await chartCard.getByRole('button', { name: 'Manuell-Fib' }).click();
     await expect(chartCard.getByText(/Schritt 1\/2:/)).toBeVisible();
 
@@ -161,7 +153,6 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     await clearFibBtn.click();
     await expect(clearFibBtn).toBeHidden();
 
-    // Fullscreen modal toggle
     await chartCard.getByTitle('Chart maximieren').click();
     await expect(page.getByTitle('Vollbild schließen')).toBeVisible();
     await page.getByTitle('Vollbild schließen').click();
@@ -177,43 +168,44 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     const errors = attachErrorListeners(page);
     await waitForDashboardReady(page);
 
-    const proseCard = page.locator('.react-grid-item', {
-      hasText: 'Markt- & Makro-Briefing (Prosa)',
-    });
+    const proseCard = widgetCard(page, 'Markt- & Makro-Briefing (Prosa)');
     await expect(proseCard).toBeVisible();
 
-    // Macro Briefing tab
     await expect(proseCard.getByText(/Makro-Briefing:/)).toBeVisible();
-    await expect(proseCard.getByText('1. Liquidität & Geldmenge (Fed Net Liquidity & M2)')).toBeVisible();
+    await expect(
+      proseCard.getByText('1. Liquidität & Geldmenge (Fed Net Liquidity & M2)'),
+    ).toBeVisible();
     await expect(proseCard.getByText('2. Zinsen, US-Dollar & Kreditrisiko')).toBeVisible();
     await expect(proseCard.getByText('Wichtigste Schlussfolgerungen')).toBeVisible();
 
-    // Kompakt / Ausführlich toggle
     await proseCard.getByRole('button', { name: 'Kompakt', exact: true }).click();
-    await expect(proseCard.getByText('1. Liquidität & Geldmenge (Fed Net Liquidity & M2)')).toBeHidden();
+    await expect(
+      proseCard.getByText('1. Liquidität & Geldmenge (Fed Net Liquidity & M2)'),
+    ).toBeHidden();
     await expect(proseCard.getByText('Wichtigste Schlussfolgerungen')).toBeVisible();
     await proseCard.getByRole('button', { name: 'Ausführlich', exact: true }).click();
-    await expect(proseCard.getByText('1. Liquidität & Geldmenge (Fed Net Liquidity & M2)')).toBeVisible();
+    await expect(
+      proseCard.getByText('1. Liquidität & Geldmenge (Fed Net Liquidity & M2)'),
+    ).toBeVisible();
 
-    // Asset-Analyse tab + Nasdaq 100 quick pill
     await proseCard.getByRole('button', { name: 'Asset-Analyse', exact: true }).click();
     await proseCard.getByRole('button', { name: 'Nasdaq 100', exact: true }).click();
-    await expect(proseCard.getByText(/Nasdaq 100 Index — Technische & Makro-Analyse/)).toBeVisible();
+    await expect(
+      proseCard.getByText(/Nasdaq 100 Index — Technische & Makro-Analyse/),
+    ).toBeVisible();
     await expect(proseCard.getByText('3. Fibonacci & Elliott-Wellen-Struktur')).toBeVisible();
 
-    // Reader Modal
     await proseCard.getByTitle('Im Lesemodus öffnen').click();
     await expect(page.getByTitle('Lesemodus schließen')).toBeVisible();
     await page.getByTitle('Lesemodus schließen').click();
 
-    // Signal Matrix
-    const matrixCard = page.locator('.react-grid-item', {
-      hasText: 'Confluence-Matrix & Signale',
-    });
+    const matrixCard = widgetCard(page, 'Confluence-Matrix & Signale');
     await expect(matrixCard).toBeVisible();
     await expect(matrixCard.getByText('Aktive Markt-Signale (1D)')).toBeVisible();
     await matrixCard.getByRole('button', { name: /Silber/ }).first().click();
-    await expect(proseCard.getByText(/Silber \(COMEX Futures\) — Technische & Makro-Analyse/)).toBeVisible();
+    await expect(
+      proseCard.getByText(/Silber \(COMEX Futures\) — Technische & Makro-Analyse/),
+    ).toBeVisible();
 
     expect(errors.pageErrors).toEqual([]);
     expect(errors.consoleErrors).toEqual([]);
@@ -226,7 +218,6 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     const errors = attachErrorListeners(page);
     await waitForDashboardReady(page);
 
-    // Switch to 2×2 Multi-Chart
     await page.getByRole('button', { name: '2×2 Multi-Chart', exact: true }).click();
     for (const title of [
       'Gold (GC=F)',
@@ -234,7 +225,7 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
       'S&P 500 (^GSPC)',
       'Nasdaq 100 (^NDX)',
     ]) {
-      const card = page.locator('.react-grid-item', { hasText: title });
+      const card = widgetCard(page, title);
       await expect(card).toBeVisible({ timeout: 20_000 });
       const cBox = await card.locator('canvas').first().boundingBox();
       expect(cBox).not.toBeNull();
@@ -242,31 +233,114 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
       expect(cBox!.height).toBeGreaterThan(120);
     }
 
-    // Switch to Makro-Cockpit then back to Analyse-Fokus
     await page.getByRole('button', { name: 'Makro-Cockpit', exact: true }).click();
     await expect(
-      page.getByRole('heading', { name: 'US-Marktliquidität (Fed Net Liquidity)' }),
+      page.getByRole('heading', { name: 'US-Marktliquidität (Fed Net Liquidity)', exact: true }),
     ).toBeVisible();
     await page.getByRole('button', { name: 'Analyse-Fokus', exact: true }).click();
     await expect(
-      page.getByRole('heading', { name: 'Master Chart Terminal' }),
+      page.getByRole('heading', { name: 'Master Chart Terminal', exact: true }),
     ).toBeVisible();
 
-    // Widget Drawer toggle
     await page.getByRole('button', { name: /Widgets \(\d+\)/ }).click();
     await expect(page.getByText('Widget-Katalog flexibel anordnen')).toBeVisible();
     const drawer = page.locator('div.fixed', { hasText: 'Widget-Katalog flexibel anordnen' });
     await drawer.getByRole('button', { name: /US-Dollar-Index \(DXY\)/ }).click();
     await drawer.getByRole('button', { name: /US-Dollar-Index \(DXY\)/ }).click();
-    // Close drawer via top-right close X button inside drawer header
     await drawer.locator('button').first().click();
     await expect(page.getByText('Widget-Katalog flexibel anordnen')).toBeHidden();
 
-    // Layout Lock toggle
     await page.getByRole('button', { name: 'Flexibel', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Gesperrt', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Gesperrt', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Flexibel', exact: true })).toBeVisible();
+
+    expect(errors.pageErrors).toEqual([]);
+    expect(errors.consoleErrors).toEqual([]);
+    expect(errors.failedApiResponses).toEqual([]);
+  });
+
+  test('manages multi-asset catalog: nested folders/subfolders, bookmarks, moving assets & live Yahoo symbol search', async ({
+    page,
+  }) => {
+    const errors = attachErrorListeners(page);
+    await waitForDashboardReady(page);
+
+    const catalogCard = widgetCard(page, 'Wertpapier-Katalog & Bookmarks');
+    const chartCard = widgetCard(page, 'Master Chart Terminal');
+    const proseCard = widgetCard(page, 'Markt- & Makro-Briefing (Prosa)');
+    await expect(catalogCard).toBeVisible();
+
+    // 1. Nested folders visible & clicking Bitcoin updates Chart + Asset Prose
+    await expect(catalogCard.getByRole('button', { name: /^Rohstoffe & Edelmetalle \d+$/ })).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /^Edelmetalle \d+$/ })).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /^Aktienindizes \d+$/ })).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /^Einzelaktien & Tech \d+$/ })).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /^Krypto \d+$/ })).toBeVisible();
+
+    await catalogCard.getByRole('button', { name: /BTC-USD/ }).click();
+    await expect(chartCard.getByText(/Bitcoin USD/).first()).toBeVisible({ timeout: 20_000 });
+    await expect(chartCard.locator('canvas').first()).toBeVisible();
+
+    await proseCard.getByRole('button', { name: 'Asset-Analyse', exact: true }).click();
+    await expect(proseCard.getByText('Bitcoin USD — Technische & Makro-Analyse')).toBeVisible();
+
+    // 2. Bookmark toggle on Apple (AAPL) -> appears in Bookmarks tab & Master Chart tabs
+    await catalogCard.getByRole('button', { name: 'Bookmark Apple' }).click();
+    await catalogCard.getByRole('button', { name: /Bookmarks \(\d+\)/ }).click();
+    await expect(catalogCard.getByRole('button', { name: /AAPL/ })).toBeVisible();
+    await expect(chartCard.getByRole('button', { name: /^Apple/ })).toBeVisible();
+
+    // Switch back to Ordner & unbookmark Apple
+    await catalogCard.getByRole('button', { name: 'Ordner', exact: true }).click();
+    await catalogCard.getByRole('button', { name: 'Bookmark Apple' }).click();
+
+    // 3. Create Folder -> Create Subfolder -> Move Apple into Subfolder -> Rename -> Delete Subfolder
+    await catalogCard.getByRole('button', { name: '+ Ordner', exact: true }).click();
+    await catalogCard.getByPlaceholder(/Ordnername/).fill('Mein Fokus');
+    await catalogCard.getByRole('button', { name: 'Erstellen', exact: true }).click();
+    await expect(catalogCard.getByRole('button', { name: /^Mein Fokus \d+$/ })).toBeVisible();
+
+    await catalogCard.getByLabel('Unterordner in Mein Fokus erstellen').click();
+    await catalogCard.getByPlaceholder(/Ordnername/).fill('Halbleiter');
+    await catalogCard.getByRole('button', { name: 'Erstellen', exact: true }).click();
+    await expect(catalogCard.getByRole('button', { name: /^Halbleiter \d+$/ })).toBeVisible();
+
+    // Move Apple into Halbleiter subfolder
+    const appleFolderSelect = catalogCard.getByLabel('Ordner für Apple');
+    const halbleiterVal = await appleFolderSelect
+      .locator('option', { hasText: 'Mein Fokus / Halbleiter' })
+      .getAttribute('value');
+    await appleFolderSelect.selectOption(halbleiterVal!);
+
+    // Rename Halbleiter -> Chips
+    await catalogCard.getByLabel('Ordner Halbleiter umbenennen').click();
+    await catalogCard.getByLabel('Ordner umbenennen').fill('Chips');
+    await catalogCard.getByRole('button', { name: 'OK', exact: true }).click();
+    await expect(catalogCard.getByRole('button', { name: /^Chips \d+$/ })).toBeVisible();
+
+    // Delete Chips subfolder (Apple remains in Mein Fokus)
+    await catalogCard.getByLabel('Ordner Chips löschen').click();
+    await expect(catalogCard.getByRole('button', { name: /^Chips \d+$/ })).toBeHidden();
+    await expect(catalogCard.getByRole('button', { name: /AAPL/ })).toBeVisible();
+
+    // 4. Live global Yahoo Finance search for AMD -> Add -> opens in Chart
+    const searchInput = catalogCard.getByPlaceholder(/Wert suchen oder Ticker hinzufügen/);
+    await searchInput.fill('AMD');
+    await expect(catalogCard.getByText('Global hinzufügen (Yahoo Finance)')).toBeVisible({
+      timeout: 15_000,
+    });
+    const addButtons = catalogCard.getByRole('button', { name: '+ Hinzufügen' });
+    await expect(addButtons.first()).toBeVisible({ timeout: 15_000 });
+    await addButtons.first().click();
+
+    await expect(chartCard.getByText(/Advanced Micro Devices|AMD/).first()).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(chartCard.locator('canvas').first()).toBeVisible();
+
+    // Reset catalog cleanly back to defaults
+    await catalogCard.getByRole('button', { name: 'Standard', exact: true }).click();
 
     expect(errors.pageErrors).toEqual([]);
     expect(errors.consoleErrors).toEqual([]);

@@ -6,8 +6,10 @@
 
 ## Kernfunktionen
 
-### 1. Fortschrittliches Chart-Terminal (`src/components/chart/`)
-- **Abgedeckte Kernmärkte:** Gold (`GC=F`), Silber (`SI=F`), S&P 500 (`^GSPC`), Nasdaq 100 (`^NDX`)
+### 1. Erweiterbarer Wertpapier-Katalog, Ordnerstruktur & Chart-Terminal (`src/components/chart/` & `src/components/widgets/CatalogExplorerWidget.tsx`)
+- **Starter-Katalog mit 35+ Werten in hierarchischen Ordnern & Unterordnern:** Rohstoffe & Edelmetalle (Gold, Silber, Platin, Palladium, Öl, Erdgas, Kupfer), Aktienindizes (S&P 500, Nasdaq 100, DAX 40, EuroStoxx 50, Nikkei 225 u. a.), Einzelaktien & Tech (NVIDIA, Apple, Microsoft, SAP, Siemens, ASML u. a.), Krypto (Bitcoin, Ethereum, Solana) sowie Devisen & Anleihen (`EUR/USD`, `TLT`, `HYG`)
+- **Globale Live-Tickersuche:** Beliebige weltweite Aktien, ETFs, Indizes, Rohstoffe oder Kryptowährungen per Yahoo-Finance-Suche direkt in jeden Ordner hinzufügen
+- **Ordner- & Bookmark-Verwaltung:** Eigene Haupt- und Unterordner anlegen, umbenennen, ein-/ausklappen, Werte zwischen Ordnern verschieben, Favoriten mit ⭐ bookmarken (erscheinen automatisch als Schnellzugriff-Tabs im Master-Chart und in der Signal-Matrix)
 - **Timeframes & Charttypen:** `15m`, `1H`, `4H`, `1D`, `1W` · Kerzen, Heikin-Ashi, Linie · Linear-/Log-Skala · Vollbild-Modus
 - **Fibonacci-Engine:** Automatische Swing-Erkennung (Retracements, hervorgehobenes Golden Pocket `0.618–0.650`, Extensions `1.272 / 1.618 / 2.618`) sowie **manuelles Zwei-Punkt-Zeichentool** direkt auf dem Chart
 - **Regelkonforme Elliott-Wellen-Analyse:** ATR-adaptiver ZigZag (`Minor`, `Intermediate`, `Primary`) mit strikter Durchsetzung der 3 Elliott-Kernregeln (W2-Retracement, W3 nicht kürzeste Impulswelle, keine W4/W1-Überschneidung), Invalidierungslinie, Zielkorridor, Konfidenz-Score und Alternativzählung

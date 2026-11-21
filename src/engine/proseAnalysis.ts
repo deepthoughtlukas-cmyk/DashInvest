@@ -1,4 +1,4 @@
-import type { AssetId, MacroOverview, QuoteSummary, Timeframe } from '../../shared/types.ts';
+import type { MacroOverview, QuoteSummary, Timeframe } from '../../shared/types.ts';
 import type { FullAssetAnalysis, MacroRegimeEvaluation } from './signals.ts';
 
 export interface ProseConclusion {
@@ -25,7 +25,7 @@ export interface ProseReport {
 }
 
 export interface AssetQuickSummary {
-  assetId: AssetId;
+  assetId: string;
   name: string;
   price: number;
   changePercent: number;

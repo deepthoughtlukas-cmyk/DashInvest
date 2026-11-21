@@ -6,13 +6,14 @@ import {
   type Layout,
   type ResponsiveLayouts,
 } from 'react-grid-layout';
-import type { AssetId, MacroOverview, QuoteSummary } from '../../../shared/types.ts';
+import type { CatalogAsset, MacroOverview, QuoteSummary } from '../../../shared/types.ts';
 import type { FullAssetAnalysis, MacroRegimeEvaluation } from '../../engine/signals.ts';
 import type { ProseReport } from '../../engine/proseAnalysis.ts';
 import { useDashboardStore, type WidgetId } from '../../store/dashboardStore.ts';
 import { WIDGET_REGISTRY } from './WidgetRegistry.ts';
 import { WidgetCard } from './WidgetCard.tsx';
 import { AdvancedChart } from '../chart/AdvancedChart.tsx';
+import { CatalogExplorerWidget } from '../widgets/CatalogExplorerWidget.tsx';
 import { NetLiquidityWidget } from '../widgets/NetLiquidityWidget.tsx';
 import { CreditSpreadsWidget } from '../widgets/CreditSpreadsWidget.tsx';
 import { DxyWidget } from '../widgets/DxyWidget.tsx';
@@ -25,10 +26,12 @@ interface DashboardGridProps {
   macro?: MacroOverview;
   macroLoading: boolean;
   quoteMap: Map<string, QuoteSummary>;
-  dailyAnalyses: Partial<Record<AssetId, FullAssetAnalysis>>;
+  focusAssets: CatalogAsset[];
+  dailyAnalyses: Record<string, FullAssetAnalysis>;
   macroRegime: MacroRegimeEvaluation | null;
   macroProseReport: ProseReport | null;
   assetProseReport: ProseReport | null;
+  onOpenCatalog: () => void;
 }
 
 function layoutsEqual(a: Layout | undefined, b: Layout | undefined): boolean {
@@ -51,10 +54,12 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
   macro,
   macroLoading,
   quoteMap,
+  focusAssets,
   dailyAnalyses,
   macroRegime,
   macroProseReport,
   assetProseReport,
+  onOpenCatalog,
 }) => {
   const { activeWidgets, layouts, layoutLocked, setLayouts, removeWidget } =
     useDashboardStore();
@@ -100,16 +105,18 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
 
   const renderWidgetBody = (id: WidgetId) => {
     switch (id) {
+      case 'catalog-explorer':
+        return <CatalogExplorerWidget quoteMap={quoteMap} />;
       case 'master-chart':
-        return <AdvancedChart macro={macro} quoteMap={quoteMap} />;
+        return <AdvancedChart macro={macro} quoteMap={quoteMap} onOpenCatalog={onOpenCatalog} />;
       case 'chart-gold':
-        return <AdvancedChart lockedAsset="GOLD" macro={macro} quoteMap={quoteMap} compact />;
+        return <AdvancedChart lockedSymbol="GC=F" macro={macro} quoteMap={quoteMap} compact />;
       case 'chart-silver':
-        return <AdvancedChart lockedAsset="SILVER" macro={macro} quoteMap={quoteMap} compact />;
+        return <AdvancedChart lockedSymbol="SI=F" macro={macro} quoteMap={quoteMap} compact />;
       case 'chart-sp500':
-        return <AdvancedChart lockedAsset="SP500" macro={macro} quoteMap={quoteMap} compact />;
+        return <AdvancedChart lockedSymbol="^GSPC" macro={macro} quoteMap={quoteMap} compact />;
       case 'chart-nasdaq':
-        return <AdvancedChart lockedAsset="NASDAQ100" macro={macro} quoteMap={quoteMap} compact />;
+        return <AdvancedChart lockedSymbol="^NDX" macro={macro} quoteMap={quoteMap} compact />;
       case 'prose-briefing':
         return (
           <ProseAnalysisWidget
@@ -121,6 +128,7 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
       case 'signal-matrix':
         return (
           <SignalMatrixWidget
+            focusAssets={focusAssets}
             quoteMap={quoteMap}
             dailyAnalyses={dailyAnalyses}
             macroRegime={macroRegime}

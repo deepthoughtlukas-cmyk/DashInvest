@@ -1,10 +1,17 @@
 import {
+  DEFAULT_CATALOG_BY_SYMBOL,
+  inferAssetClass,
+  inferDecimals,
+  inferUnit,
+  isValidTickerSymbol,
+  resolveCanonicalSymbol,
+} from '../../shared/catalog.ts';
+import {
   ASSET_META,
-  type AssetId,
   type Candle,
   type MacroPoint,
-  type QuoteId,
   type QuoteSummary,
+  type SymbolSearchResult,
   type Timeframe,
 } from '../../shared/types.ts';
 import type { MarketDataProvider } from './types.ts';
@@ -19,12 +26,8 @@ interface SymbolMetaConfig {
   decimals: number;
 }
 
-const SYMBOL_CONFIG: Record<QuoteId, SymbolMetaConfig> = {
-  GOLD: { ...ASSET_META.GOLD, currency: 'USD' },
-  SILVER: { ...ASSET_META.SILVER, currency: 'USD' },
-  SP500: { ...ASSET_META.SP500, currency: 'USD' },
-  NASDAQ100: { ...ASSET_META.NASDAQ100, currency: 'USD' },
-  DXY: {
+const SPECIAL_MACRO_META: Record<string, SymbolMetaConfig> = {
+  'DX-Y.NYB': {
     symbol: 'DX-Y.NYB',
     name: 'US-Dollar-Index (DXY)',
     shortName: 'DXY',
@@ -32,7 +35,7 @@ const SYMBOL_CONFIG: Record<QuoteId, SymbolMetaConfig> = {
     unit: 'Pkt.',
     decimals: 2,
   },
-  US10Y: {
+  '^TNX': {
     symbol: '^TNX',
     name: '10J US-Anleiherendite',
     shortName: 'US 10Y',
@@ -42,10 +45,48 @@ const SYMBOL_CONFIG: Record<QuoteId, SymbolMetaConfig> = {
   },
 };
 
+function lookupStaticMeta(symbolOrId: string): SymbolMetaConfig {
+  const canonical = resolveCanonicalSymbol(symbolOrId);
+  const catalogEntry = DEFAULT_CATALOG_BY_SYMBOL.get(canonical);
+  if (catalogEntry) {
+    return {
+      symbol: catalogEntry.symbol,
+      name: catalogEntry.name,
+      shortName: catalogEntry.shortName,
+      currency: catalogEntry.unit === 'EUR' ? 'EUR' : 'USD',
+      unit: catalogEntry.unit,
+      decimals: catalogEntry.decimals,
+    };
+  }
+  if (SPECIAL_MACRO_META[canonical]) {
+    return SPECIAL_MACRO_META[canonical];
+  }
+
+  for (const legacy of Object.values(ASSET_META)) {
+    if (legacy.symbol === canonical) {
+      return { ...legacy, currency: 'USD' };
+    }
+  }
+
+  const cls = inferAssetClass(canonical);
+  return {
+    symbol: canonical,
+    name: canonical,
+    shortName: canonical,
+    currency: 'USD',
+    unit: inferUnit(cls, 'USD'),
+    decimals: inferDecimals(canonical, cls),
+  };
+}
+
 interface YahooChartResponse {
   chart?: {
     result?: Array<{
       meta?: {
+        symbol?: string;
+        shortName?: string;
+        longName?: string;
+        instrumentType?: string;
         regularMarketPrice?: number;
         regularMarketDayHigh?: number;
         regularMarketDayLow?: number;
@@ -66,6 +107,18 @@ interface YahooChartResponse {
     }>;
     error?: { description?: string };
   };
+}
+
+interface YahooSearchResponse {
+  quotes?: Array<{
+    symbol?: string;
+    shortname?: string;
+    longname?: string;
+    quoteType?: string;
+    exchDisp?: string;
+    exchange?: string;
+    isYahooFinance?: boolean;
+  }>;
 }
 
 const YAHOO_HOSTS = [
@@ -105,6 +158,32 @@ async function fetchYahooRaw(symbol: string, range: string, interval: string): P
   }
 
   throw lastError instanceof Error ? lastError : new Error(`Failed fetching Yahoo chart for ${symbol}`);
+}
+
+async function fetchYahooSearchRaw(query: string): Promise<YahooSearchResponse> {
+  const encoded = encodeURIComponent(query);
+  let lastError: unknown;
+
+  for (const host of YAHOO_HOSTS) {
+    try {
+      const url = `${host}/v1/finance/search?q=${encoded}&quotesCount=12&newsCount=0&enableFuzzyQuery=false`;
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) {
+        throw new Error(`Yahoo search HTTP ${res.status}`);
+      }
+      return (await res.json()) as YahooSearchResponse;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Yahoo symbol search failed');
 }
 
 export function sanitizeCandles(raw: YahooChartResponse): Candle[] {
@@ -200,13 +279,13 @@ export class YahooFinanceProvider implements MarketDataProvider {
   readonly name = 'Yahoo Finance';
   private cache = new TtlCache();
 
-  async getCandles(id: QuoteId, timeframe: Timeframe): Promise<Candle[]> {
-    const cfg = SYMBOL_CONFIG[id];
+  async getCandles(symbolOrId: string, timeframe: Timeframe): Promise<Candle[]> {
+    const canonical = resolveCanonicalSymbol(symbolOrId);
     const { range, interval, ttlMs } = getTimeframeParams(timeframe);
-    const cacheKey = `yf:candles:${cfg.symbol}:${timeframe}`;
+    const cacheKey = `yf:candles:${canonical}:${timeframe}`;
 
     const { data } = await this.cache.getOrLoad(cacheKey, ttlMs, async () => {
-      const raw = await fetchYahooRaw(cfg.symbol, range, interval);
+      const raw = await fetchYahooRaw(canonical, range, interval);
       const cleaned = sanitizeCandles(raw);
       return timeframe === '4h' ? aggregateFourHourCandles(cleaned) : cleaned;
     });
@@ -214,13 +293,11 @@ export class YahooFinanceProvider implements MarketDataProvider {
     return data;
   }
 
-  async getQuote(id: QuoteId): Promise<QuoteSummary> {
-    const cfg = SYMBOL_CONFIG[id];
+  async getQuote(symbolOrId: string): Promise<QuoteSummary> {
+    const cfg = lookupStaticMeta(symbolOrId);
     const cacheKey = `yf:quote:${cfg.symbol}`;
 
-    const { data } = await this.cache.getOrLoad(cacheKey, 30_000, async () => {
-      // Fetch 1y daily bars so 1D, 1W, YTD, and 52W ranges are always accurate
-      // (avoids Yahoo's chartPreviousClose pitfall on multi-day ranges).
+    const { data } = await this.cache.getOrLoad(cacheKey, 45_000, async () => {
       const raw = await fetchYahooRaw(cfg.symbol, '1y', '1d');
       const daily = sanitizeCandles(raw);
       const meta = raw.chart?.result?.[0]?.meta;
@@ -275,11 +352,21 @@ export class YahooFinanceProvider implements MarketDataProvider {
       const ytdChangePercent =
         ytdRef && ytdRef.close !== 0 ? ((price - ytdRef.close) / ytdRef.close) * 100 : 0;
 
+      const resolvedName =
+        cfg.name !== cfg.symbol
+          ? cfg.name
+          : meta?.longName || meta?.shortName || cfg.symbol;
+      const resolvedShort =
+        cfg.shortName !== cfg.symbol
+          ? cfg.shortName
+          : (meta?.shortName || cfg.symbol).slice(0, 22);
+      const currency = meta?.currency ?? cfg.currency;
+
       return {
-        id,
+        id: cfg.symbol,
         symbol: cfg.symbol,
-        name: cfg.name,
-        shortName: cfg.shortName,
+        name: resolvedName,
+        shortName: resolvedShort,
         price,
         change,
         changePercent,
@@ -288,8 +375,8 @@ export class YahooFinanceProvider implements MarketDataProvider {
         dayLow,
         fiftyTwoWeekHigh,
         fiftyTwoWeekLow,
-        currency: meta?.currency ?? cfg.currency,
-        unit: cfg.unit,
+        currency,
+        unit: cfg.unit === 'USD' && currency ? currency : cfg.unit,
         decimals: cfg.decimals,
         updatedAt: new Date().toISOString(),
         weekChangePercent,
@@ -300,12 +387,12 @@ export class YahooFinanceProvider implements MarketDataProvider {
     return data;
   }
 
-  async getDailyHistory(id: AssetId | 'DXY' | 'US10Y', range = '5y'): Promise<MacroPoint[]> {
-    const cfg = SYMBOL_CONFIG[id];
-    const cacheKey = `yf:daily:${cfg.symbol}:${range}`;
+  async getDailyHistory(symbolOrId: string, range = '5y'): Promise<MacroPoint[]> {
+    const canonical = resolveCanonicalSymbol(symbolOrId);
+    const cacheKey = `yf:daily:${canonical}:${range}`;
 
     const { data } = await this.cache.getOrLoad(cacheKey, 180_000, async () => {
-      const raw = await fetchYahooRaw(cfg.symbol, range, '1d');
+      const raw = await fetchYahooRaw(canonical, range, '1d');
       const candles = sanitizeCandles(raw);
       const map = new Map<string, number>();
       for (const bar of candles) {
@@ -314,6 +401,56 @@ export class YahooFinanceProvider implements MarketDataProvider {
       return Array.from(map.entries())
         .map(([date, value]) => ({ date, value }))
         .sort((a, b) => a.date.localeCompare(b.date));
+    });
+
+    return data;
+  }
+
+  async searchSymbols(query: string): Promise<SymbolSearchResult[]> {
+    const trimmed = query.trim();
+    if (trimmed.length < 1) return [];
+    const cacheKey = `yf:search:${trimmed.toLowerCase()}`;
+
+    const { data } = await this.cache.getOrLoad(cacheKey, 5 * 60_000, async () => {
+      const raw = await fetchYahooSearchRaw(trimmed);
+      const allowedTypes = new Set([
+        'EQUITY',
+        'ETF',
+        'INDEX',
+        'FUTURE',
+        'CRYPTOCURRENCY',
+        'CURRENCY',
+      ]);
+
+      const results: SymbolSearchResult[] = [];
+      const seen = new Set<string>();
+
+      for (const q of raw.quotes ?? []) {
+        const symbol = (q.symbol ?? '').trim().toUpperCase();
+        if (!symbol || seen.has(symbol) || !isValidTickerSymbol(symbol)) continue;
+        const qt = (q.quoteType ?? '').toUpperCase();
+        if (qt && !allowedTypes.has(qt)) continue;
+
+        seen.add(symbol);
+        const assetClass = inferAssetClass(symbol, qt);
+        const decimals = inferDecimals(symbol, assetClass);
+        const unit = inferUnit(assetClass, 'USD');
+        const fullName = (q.longname || q.shortname || symbol).trim();
+        const shortName = (q.shortname || q.longname || symbol).trim().slice(0, 24);
+
+        results.push({
+          symbol,
+          name: fullName,
+          shortName,
+          quoteType: qt || 'EQUITY',
+          exchange: (q.exchDisp || q.exchange || '').trim(),
+          assetClass,
+          decimals,
+          unit,
+        });
+      }
+
+      return results;
     });
 
     return data;

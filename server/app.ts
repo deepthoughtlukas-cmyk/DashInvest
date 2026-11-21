@@ -1,6 +1,15 @@
 import express from 'express';
 import cors from 'cors';
-import type { AssetId, MacroOverview, MacroPoint, QuoteId, Timeframe } from '../shared/types.ts';
+import {
+  isValidTickerSymbol,
+  resolveCanonicalSymbol,
+} from '../shared/catalog.ts';
+import type {
+  MacroOverview,
+  MacroPoint,
+  QuoteSummary,
+  Timeframe,
+} from '../shared/types.ts';
 import { TtlCache } from './cache.ts';
 import type { MacroDataProvider, MarketDataProvider } from './providers/types.ts';
 import { YahooFinanceProvider } from './providers/yahooProvider.ts';
@@ -12,7 +21,6 @@ import {
   offsetIsoDateDays,
 } from './providers/fredProvider.ts';
 
-const VALID_ASSETS: AssetId[] = ['GOLD', 'SILVER', 'SP500', 'NASDAQ100'];
 const VALID_TIMEFRAMES: Timeframe[] = ['15m', '1h', '4h', '1d', '1w'];
 
 function computeSimpleSma(points: MacroPoint[], period: number): number | null {
@@ -224,39 +232,109 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json({ ok: true, service: 'dashinvest-api', timestamp: new Date().toISOString() });
   });
 
-  app.get('/api/market/quotes', async (_req, res) => {
+  app.get('/api/market/search', async (req, res) => {
+    const query = String(req.query.q ?? '').trim();
+    if (query.length < 1) {
+      res.json({ query, results: [] });
+      return;
+    }
     try {
-      const ids: QuoteId[] = ['GOLD', 'SILVER', 'SP500', 'NASDAQ100', 'DXY', 'US10Y'];
-      const quotes = await Promise.all(ids.map((id) => yahoo.getQuote(id)));
-      res.json({ quotes, updatedAt: new Date().toISOString() });
+      const results = await yahoo.searchSymbols(query);
+      res.json({ query, results });
     } catch (err) {
       res.status(502).json({
-        error: err instanceof Error ? err.message : 'Fehler beim Abrufen der Marktdaten',
+        error: err instanceof Error ? err.message : 'Fehler bei der Wertpapiersuche',
       });
     }
   });
 
-  app.get('/api/market/candles/:assetId', async (req, res) => {
-    const assetId = req.params.assetId.toUpperCase() as AssetId;
-    const tfParam = (req.query.tf as string | undefined)?.toLowerCase() as Timeframe | undefined;
-    const timeframe: Timeframe = tfParam && VALID_TIMEFRAMES.includes(tfParam) ? tfParam : '1d';
+  app.get('/api/market/quotes', async (req, res) => {
+    const rawSymbols = typeof req.query.symbols === 'string' ? req.query.symbols.trim() : '';
 
-    if (!VALID_ASSETS.includes(assetId)) {
-      res.status(400).json({ error: `Unbekanntes Asset: ${req.params.assetId}` });
+    if (!rawSymbols) {
+      try {
+        const ids = ['GOLD', 'SILVER', 'SP500', 'NASDAQ100', 'DXY', 'US10Y'];
+        const quotes = await Promise.all(ids.map((id) => yahoo.getQuote(id)));
+        res.json({ quotes, failed: [], updatedAt: new Date().toISOString() });
+      } catch (err) {
+        res.status(502).json({
+          error: err instanceof Error ? err.message : 'Fehler beim Abrufen der Marktdaten',
+        });
+      }
       return;
     }
 
-    try {
-      const [candles, quote] = await Promise.all([
-        yahoo.getCandles(assetId, timeframe),
-        yahoo.getQuote(assetId),
-      ]);
-      res.json({ assetId, timeframe, quote, candles });
-    } catch (err) {
-      res.status(502).json({
-        error: err instanceof Error ? err.message : `Fehler beim Laden von ${assetId}`,
+    const requested = Array.from(
+      new Set(
+        rawSymbols
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0 && isValidTickerSymbol(s))
+          .map((s) => resolveCanonicalSymbol(s)),
+      ),
+    ).slice(0, 45);
+
+    if (requested.length === 0) {
+      res.status(400).json({ error: 'Keine gültigen Ticker-Symbole angegeben' });
+      return;
+    }
+
+    const quotes: QuoteSummary[] = [];
+    const failed: string[] = [];
+
+    // Fetch in gentle batches of 6 so one bad ticker never fails the batch
+    for (let i = 0; i < requested.length; i += 6) {
+      const chunk = requested.slice(i, i + 6);
+      const settled = await Promise.allSettled(chunk.map((sym) => yahoo.getQuote(sym)));
+      settled.forEach((outcome, idx) => {
+        if (outcome.status === 'fulfilled') {
+          quotes.push(outcome.value);
+        } else {
+          failed.push(chunk[idx]);
+        }
       });
     }
+
+    res.json({ quotes, failed, updatedAt: new Date().toISOString() });
+  });
+
+  const handleCandlesRequest = async (
+    rawInput: string,
+    tfQuery: unknown,
+    res: express.Response,
+  ) => {
+    const tfParam = (typeof tfQuery === 'string' ? tfQuery : undefined)?.toLowerCase() as
+      | Timeframe
+      | undefined;
+    const timeframe: Timeframe = tfParam && VALID_TIMEFRAMES.includes(tfParam) ? tfParam : '1d';
+
+    if (!rawInput || !isValidTickerSymbol(rawInput)) {
+      res.status(400).json({ error: `Ungültiges Symbol: ${rawInput}` });
+      return;
+    }
+
+    const symbol = resolveCanonicalSymbol(rawInput);
+
+    try {
+      const [candles, quote] = await Promise.all([
+        yahoo.getCandles(symbol, timeframe),
+        yahoo.getQuote(symbol),
+      ]);
+      res.json({ assetId: rawInput, symbol, timeframe, quote, candles });
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : `Fehler beim Laden von ${symbol}`,
+      });
+    }
+  };
+
+  app.get('/api/market/candles', async (req, res) => {
+    const symbol = String(req.query.symbol ?? '').trim();
+    await handleCandlesRequest(symbol, req.query.tf, res);
+  });
+
+  app.get('/api/market/candles/:assetId', async (req, res) => {
+    await handleCandlesRequest(req.params.assetId, req.query.tf, res);
   });
 
   app.get('/api/macro/overview', async (_req, res) => {
