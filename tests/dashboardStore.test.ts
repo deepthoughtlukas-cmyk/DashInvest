@@ -1,0 +1,83 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { getPresetLayouts, useDashboardStore } from '../src/store/dashboardStore.ts';
+
+describe('Dashboard Zustand Store & Presets', () => {
+  beforeEach(() => {
+    useDashboardStore.setState({
+      activeAsset: 'GOLD',
+      activeTimeframe: '1d',
+      activePreset: 'analyse-fokus',
+      activeWidgets: [
+        'master-chart',
+        'prose-briefing',
+        'macro-liquidity',
+        'macro-credit',
+        'signal-matrix',
+        'macro-dxy',
+        'macro-m2',
+        'macro-us10y',
+      ],
+      layouts: getPresetLayouts('analyse-fokus'),
+      layoutLocked: false,
+      proseTab: 'macro',
+      proseDepth: 'detailed',
+      manualFibs: {},
+    });
+  });
+
+  it('switches presets cleanly across analyse-fokus, multi-chart, and makro-cockpit', () => {
+    const store = useDashboardStore.getState();
+    expect(store.activeWidgets).toHaveLength(8);
+
+    store.applyPreset('multi-chart');
+    const afterMulti = useDashboardStore.getState();
+    expect(afterMulti.activePreset).toBe('multi-chart');
+    expect(afterMulti.activeWidgets).toEqual(
+      expect.arrayContaining(['chart-gold', 'chart-silver', 'chart-sp500', 'chart-nasdaq']),
+    );
+
+    store.applyPreset('makro-cockpit');
+    const afterMacro = useDashboardStore.getState();
+    expect(afterMacro.activePreset).toBe('makro-cockpit');
+    expect(afterMacro.activeWidgets[0]).toBe('macro-liquidity');
+  });
+
+  it('toggles, removes, and resets widgets and updates chart & prose preferences', () => {
+    const store = useDashboardStore.getState();
+
+    store.toggleWidget('macro-dxy');
+    expect(useDashboardStore.getState().activeWidgets).not.toContain('macro-dxy');
+
+    store.toggleWidget('macro-dxy');
+    expect(useDashboardStore.getState().activeWidgets).toContain('macro-dxy');
+
+    store.removeWidget('macro-m2');
+    expect(useDashboardStore.getState().activeWidgets).not.toContain('macro-m2');
+
+    store.resetCurrentPreset();
+    expect(useDashboardStore.getState().activeWidgets).toContain('macro-m2');
+
+    store.setActiveAsset('NASDAQ100');
+    store.setActiveTimeframe('4h');
+    store.setLayoutLocked(true);
+    store.setProseTab('asset');
+    store.setProseDepth('compact');
+    store.updateChartSetting('showIchimoku', true);
+    store.setManualFib('NASDAQ100', {
+      start: { time: 100, price: 24000 },
+      end: { time: 200, price: 26000 },
+    });
+
+    const updated = useDashboardStore.getState();
+    expect(updated.activeAsset).toBe('NASDAQ100');
+    expect(updated.activeTimeframe).toBe('4h');
+    expect(updated.layoutLocked).toBe(true);
+    expect(updated.proseTab).toBe('asset');
+    expect(updated.proseDepth).toBe('compact');
+    expect(updated.chartSettings.showIchimoku).toBe(true);
+    expect(updated.manualFibs.NASDAQ100?.end.price).toBe(26000);
+
+    updated.setManualFib('NASDAQ100', null);
+    expect(useDashboardStore.getState().manualFibs.NASDAQ100).toBeUndefined();
+  });
+});
