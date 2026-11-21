@@ -39,51 +39,62 @@ function widgetCard(page: Page, title: string) {
   });
 }
 
+async function assertOverlayWorks(card: ReturnType<Page['locator']>) {
+  await card.getByRole('button', { name: 'S&P 500', exact: true }).click();
+  await expect(card.locator('svg path[data-overlay="sp500"]')).toBeVisible();
+  await card.getByRole('button', { name: 'Gold', exact: true }).click();
+  await expect(card.locator('svg path[data-overlay="gold"]')).toBeVisible();
+  await card.getByRole('button', { name: 'Aus', exact: true }).click();
+  await expect(card.locator('svg path[data-overlay]')).toHaveCount(0);
+}
+
 test.describe('DashInvest Real-Browser E2E Verification', () => {
-  test('loads live market & macro data with zero console/API errors and displays all 5 macro widgets', async ({
+  test('loads live market & macro data with zero console/API errors and displays all 5 macro widgets with S&P 500 / Gold overlays', async ({
     page,
   }) => {
     const errors = attachErrorListeners(page);
     await waitForDashboardReady(page);
 
-    // 1. US Net Liquidity widget
+    // 1. US Net Liquidity widget (defaults to S&P 500 overlay, switchable to Gold & Aus)
     const liquidityCard = widgetCard(page, 'US-Marktliquidität (Fed Net Liquidity)');
     await expect(liquidityCard).toBeVisible();
     await expect(liquidityCard.getByText('Fed-Bilanz (WALCL)')).toBeVisible();
     await expect(liquidityCard.getByText('− TGA (WTREGEN)')).toBeVisible();
     await expect(liquidityCard.getByText('− ON RRP')).toBeVisible();
-
-    await liquidityCard.getByRole('button', { name: 'Gold', exact: true }).click();
-    await expect(liquidityCard.locator('svg path').first()).toBeVisible();
-    await liquidityCard.getByRole('button', { name: 'Aus', exact: true }).click();
+    await expect(liquidityCard.locator('svg path[data-overlay="sp500"]')).toBeVisible();
+    await assertOverlayWorks(liquidityCard);
     await liquidityCard.getByRole('button', { name: 'S&P 500', exact: true }).click();
 
-    // 2. Credit Spreads widget
+    // 2. Credit Spreads widget + S&P 500 & Gold overlay
     const creditCard = widgetCard(page, 'Credit Spreads (US High Yield OAS)');
     await expect(creditCard).toBeVisible();
     await expect(creditCard.getByText(/\d+\s+bps/).first()).toBeVisible();
     await expect(creditCard.getByText(/Perzentil/).first()).toBeVisible();
-    await expect(creditCard.locator('svg path').first()).toBeVisible();
+    await expect(creditCard.locator('svg path[data-series="base"]')).toBeVisible();
+    await assertOverlayWorks(creditCard);
 
-    // 3. DXY widget
+    // 3. DXY widget + S&P 500 & Gold overlay
     const dxyCard = widgetCard(page, 'US-Dollar-Index (DXY)');
     await expect(dxyCard).toBeVisible();
     await expect(dxyCard.getByText(/SMA 50:/)).toBeVisible();
     await expect(dxyCard.getByText(/SMA 200:/)).toBeVisible();
-    await expect(dxyCard.locator('svg path').first()).toBeVisible();
+    await expect(dxyCard.locator('svg path[data-series="base"]')).toBeVisible();
+    await assertOverlayWorks(dxyCard);
 
-    // 4. M2 Money Supply widget
+    // 4. M2 Money Supply widget + S&P 500 & Gold overlay
     const m2Card = widgetCard(page, 'US-Geldmenge M2');
     await expect(m2Card).toBeVisible();
     await expect(m2Card.getByText(/Bio\. \$/).first()).toBeVisible();
     await expect(m2Card.getByText(/YoY/).first()).toBeVisible();
-    await expect(m2Card.locator('svg path').first()).toBeVisible();
+    await expect(m2Card.locator('svg path[data-series="base"]')).toBeVisible();
+    await assertOverlayWorks(m2Card);
 
-    // 5. 10Y US Treasury Yield widget
+    // 5. 10Y US Treasury Yield widget + S&P 500 & Gold overlay
     const y10Card = widgetCard(page, '10J US-Anleiherenditen');
     await expect(y10Card).toBeVisible();
     await expect(y10Card.getByText(/2s10s:/).first()).toBeVisible();
-    await expect(y10Card.locator('svg path').first()).toBeVisible();
+    await expect(y10Card.locator('svg path[data-series="base"]')).toBeVisible();
+    await assertOverlayWorks(y10Card);
 
     expect(errors.pageErrors).toEqual([]);
     expect(errors.consoleErrors).toEqual([]);

@@ -87,6 +87,8 @@ export const Us10yWidget: React.FC<Us10yWidgetProps> = ({ macro, isLoading }) =>
 
       <MacroSparkChart
         series={history}
+        comparisons={macro.comparisons}
+        defaultOverlay="none"
         color="#f59e0b"
         unitSuffix=" %"
         decimals={2}

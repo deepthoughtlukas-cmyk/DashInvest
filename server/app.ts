@@ -50,8 +50,8 @@ export async function buildMacroOverview(
     fred.getSeries('WALCL'),
     fred.getSeries('WTREGEN'),
     fred.getSeries('RRPONTSYD'),
-    yahoo.getDailyHistory('SP500', '5y'),
-    yahoo.getDailyHistory('GOLD', '5y'),
+    yahoo.getDailyHistory('SP500', '10y'),
+    yahoo.getDailyHistory('GOLD', '10y'),
   ]);
 
   // 1. DXY

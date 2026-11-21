@@ -1,5 +1,8 @@
 import React, { useId, useMemo, useState } from 'react';
 import type { MacroPoint } from '../../../shared/types.ts';
+import { alignOverlaySeries } from '../../engine/macroOverlay.ts';
+
+export type MacroOverlayKey = 'none' | 'sp500' | 'gold';
 
 interface ThresholdLine {
   value: number;
@@ -9,6 +12,11 @@ interface ThresholdLine {
 
 interface MacroSparkChartProps {
   series: MacroPoint[];
+  comparisons?: {
+    sp500: MacroPoint[];
+    gold: MacroPoint[];
+  };
+  defaultOverlay?: MacroOverlayKey;
   overlaySeries?: MacroPoint[];
   overlayLabel?: string;
   color?: string;
@@ -26,12 +34,20 @@ const RANGE_OPTIONS: Array<{ id: '1Y' | '3Y' | '5Y' | 'ALL'; label: string }> = 
   { id: 'ALL', label: 'MAX' },
 ];
 
+const OVERLAY_OPTIONS: Array<{ id: MacroOverlayKey; label: string; color: string }> = [
+  { id: 'none', label: 'Aus', color: '#94a3b8' },
+  { id: 'sp500', label: 'S&P 500', color: '#c084fc' },
+  { id: 'gold', label: 'Gold', color: '#facc15' },
+];
+
 export const MacroSparkChart: React.FC<MacroSparkChartProps> = ({
   series,
+  comparisons,
+  defaultOverlay = 'none',
   overlaySeries,
   overlayLabel,
   color = '#38bdf8',
-  overlayColor = '#f59e0b',
+  overlayColor,
   thresholds = [],
   unitSuffix = '',
   decimals = 2,
@@ -39,7 +55,39 @@ export const MacroSparkChart: React.FC<MacroSparkChartProps> = ({
 }) => {
   const gradId = useId();
   const [range, setRange] = useState<'1Y' | '3Y' | '5Y' | 'ALL'>(defaultRange);
+  const [overlay, setOverlay] = useState<MacroOverlayKey>(defaultOverlay);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const activeOverlaySeries = useMemo(() => {
+    if (comparisons) {
+      if (overlay === 'sp500') return comparisons.sp500;
+      if (overlay === 'gold') return comparisons.gold;
+      return undefined;
+    }
+    return overlaySeries;
+  }, [comparisons, overlay, overlaySeries]);
+
+  const activeOverlayLabel = useMemo(() => {
+    if (comparisons) {
+      if (overlay === 'sp500') return 'S&P 500';
+      if (overlay === 'gold') return 'Gold';
+      return undefined;
+    }
+    return overlayLabel;
+  }, [comparisons, overlay, overlayLabel]);
+
+  const resolvedOverlayColor = useMemo(() => {
+    if (overlayColor) return overlayColor;
+    if (overlay === 'sp500') return '#c084fc';
+    if (overlay === 'gold') return '#facc15';
+    return '#c084fc';
+  }, [overlayColor, overlay]);
+
+  const activeOverlayAttr: MacroOverlayKey = comparisons
+    ? overlay
+    : overlaySeries
+      ? 'sp500'
+      : 'none';
 
   const filtered = useMemo(() => {
     if (series.length === 0) return [];
@@ -53,21 +101,14 @@ export const MacroSparkChart: React.FC<MacroSparkChartProps> = ({
   }, [series, range]);
 
   const alignedOverlay = useMemo(() => {
-    if (!overlaySeries || overlaySeries.length === 0 || filtered.length === 0) return null;
-    const sorted = [...overlaySeries].sort((a, b) => a.date.localeCompare(b.date));
-    const vals: Array<number | null> = [];
-    let j = 0;
-    for (const pt of filtered) {
-      while (j + 1 < sorted.length && sorted[j + 1].date <= pt.date) {
-        j++;
-      }
-      vals.push(sorted[j] && sorted[j].date <= pt.date ? sorted[j].value : sorted[0]?.value ?? null);
+    if (!activeOverlaySeries || activeOverlaySeries.length === 0 || filtered.length === 0) {
+      return null;
     }
-    return vals;
-  }, [overlaySeries, filtered]);
+    return alignOverlaySeries(filtered, activeOverlaySeries);
+  }, [activeOverlaySeries, filtered]);
 
   const width = 420;
-  const height = 112;
+  const height = 108;
   const padX = 6;
   const padY = 10;
 
@@ -116,15 +157,20 @@ export const MacroSparkChart: React.FC<MacroSparkChartProps> = ({
         const oMin = Math.min(...validOv);
         const oMax = Math.max(...validOv);
         const oSpan = oMax - oMin || 1;
-        oPath = alignedOverlay
-          .map((v, idx) => {
-            if (v === null) return '';
-            const x = xFn(idx);
-            const y = padY + (1 - (v - oMin) / oSpan) * (height - padY * 2);
-            return `${idx === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-          })
-          .filter(Boolean)
-          .join(' ');
+        let segmentOpen = false;
+        const cmds: string[] = [];
+        for (let idx = 0; idx < alignedOverlay.length; idx++) {
+          const v = alignedOverlay[idx];
+          if (v === null) {
+            segmentOpen = false;
+            continue;
+          }
+          const x = xFn(idx);
+          const y = padY + (1 - (v - oMin) / oSpan) * (height - padY * 2);
+          cmds.push(`${segmentOpen ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`);
+          segmentOpen = true;
+        }
+        oPath = cmds.join(' ');
       }
     }
 
@@ -148,45 +194,91 @@ export const MacroSparkChart: React.FC<MacroSparkChartProps> = ({
       maximumFractionDigits: decimals,
     }).format(v)}${unitSuffix}`;
 
+  const dashOverlay =
+    overlay === 'gold' && color.toLowerCase() === '#f59e0b' ? '4 2' : undefined;
+
   return (
-    <div className="flex flex-1 flex-col justify-end">
-      <div className="mb-1 flex items-center justify-between gap-2 text-[10.5px]">
-        <div className="font-mono-num min-h-[16px] text-slate-400">
+    <div className="flex flex-1 flex-col justify-end gap-1">
+      {/* Unified compact readout + Overlay & Range controls */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10.5px]">
+        <div className="font-mono-num min-w-0 truncate text-slate-400">
           {hovered ? (
             <span className="text-slate-200">
               {hovered.date}: <strong style={{ color }}>{fmtVal(hovered.value)}</strong>
-              {hoveredOverlay !== null && overlayLabel && (
-                <span className="ml-2" style={{ color: overlayColor }}>
-                  {overlayLabel}: {new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(hoveredOverlay)}
+              {hoveredOverlay !== null && activeOverlayLabel && (
+                <span className="ml-1.5" style={{ color: resolvedOverlayColor }}>
+                  · {activeOverlayLabel}:{' '}
+                  {new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(
+                    hoveredOverlay,
+                  )}
                 </span>
               )}
             </span>
           ) : (
             <span>
-              Range: {fmtVal(minVal)} – {fmtVal(maxVal)}
+              {fmtVal(minVal)} – {fmtVal(maxVal)}
             </span>
           )}
         </div>
 
-        <div className="widget-no-drag flex items-center gap-0.5 rounded border border-slate-800 bg-slate-900/80 p-0.5">
-          {RANGE_OPTIONS.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => setRange(opt.id)}
-              className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition ${
-                range === opt.id
-                  ? 'bg-sky-500/20 text-sky-300'
-                  : 'text-slate-500 hover:text-slate-300'
-              }`}
+        <div className="widget-no-drag flex flex-wrap items-center gap-1">
+          {comparisons && (
+            <div
+              role="group"
+              aria-label="Vergleichs-Overlay"
+              className="flex items-center gap-0.5 rounded border border-slate-800 bg-slate-900/80 p-0.5"
             >
-              {opt.label}
-            </button>
-          ))}
+              {OVERLAY_OPTIONS.map((opt) => {
+                const active = overlay === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setOverlay(opt.id)}
+                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition ${
+                      active
+                        ? opt.id === 'sp500'
+                          ? 'bg-purple-500/20 text-purple-300'
+                          : opt.id === 'gold'
+                            ? 'bg-yellow-500/20 text-yellow-300'
+                            : 'bg-slate-700/70 text-slate-200'
+                        : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    {opt.id !== 'none' && (
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ backgroundColor: opt.color }}
+                      />
+                    )}
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex items-center gap-0.5 rounded border border-slate-800 bg-slate-900/80 p-0.5">
+            {RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setRange(opt.id)}
+                className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition ${
+                  range === opt.id
+                    ? 'bg-sky-500/20 text-sky-300'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="relative h-[108px] w-full">
+      <div className="relative min-h-[86px] flex-1 w-full">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           preserveAspectRatio="none"
@@ -238,15 +330,18 @@ export const MacroSparkChart: React.FC<MacroSparkChartProps> = ({
           {areaD && <path d={areaD} fill={`url(#${gradId})`} />}
           {overlayPathD && (
             <path
+              data-overlay={activeOverlayAttr}
               d={overlayPathD}
               fill="none"
-              stroke={overlayColor}
-              strokeWidth="1.4"
-              strokeOpacity="0.82"
+              stroke={resolvedOverlayColor}
+              strokeWidth="1.5"
+              strokeOpacity="0.88"
+              strokeDasharray={dashOverlay}
             />
           )}
           {pathD && (
             <path
+              data-series="base"
               d={pathD}
               fill="none"
               stroke={color}

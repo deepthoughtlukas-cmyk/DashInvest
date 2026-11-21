@@ -90,6 +90,8 @@ export const CreditSpreadsWidget: React.FC<CreditSpreadsWidgetProps> = ({ macro,
 
       <MacroSparkChart
         series={history}
+        comparisons={macro.comparisons}
+        defaultOverlay="none"
         color={regime === 'stress' ? '#ef4444' : regime === 'risk-on' ? '#10b981' : '#f59e0b'}
         unitSuffix=" bps"
         decimals={0}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import type { MacroOverview } from '../../../shared/types.ts';
 import { MacroSparkChart } from './MacroSparkChart.tsx';
 
@@ -14,8 +14,6 @@ const fmt = (n: number, d = 1) =>
   }).format(n);
 
 export const NetLiquidityWidget: React.FC<NetLiquidityWidgetProps> = ({ macro, isLoading }) => {
-  const [overlay, setOverlay] = useState<'none' | 'sp500' | 'gold'>('sp500');
-
   if (isLoading && !macro) {
     return (
       <div className="flex h-full items-center justify-center text-xs text-slate-500">
@@ -45,13 +43,6 @@ export const NetLiquidityWidget: React.FC<NetLiquidityWidgetProps> = ({ macro, i
     date,
     history,
   } = macro.netLiquidity;
-
-  const overlaySeries =
-    overlay === 'sp500'
-      ? macro.comparisons.sp500
-      : overlay === 'gold'
-        ? macro.comparisons.gold
-        : undefined;
 
   return (
     <div className="flex h-full flex-col justify-between gap-2">
@@ -121,39 +112,11 @@ export const NetLiquidityWidget: React.FC<NetLiquidityWidgetProps> = ({ macro, i
         </div>
       </div>
 
-      {/* Overlay Selector */}
-      <div className="widget-no-drag flex items-center justify-between text-[10.5px]">
-        <span className="text-slate-500">Vergleichs-Overlay (normalisiert):</span>
-        <div className="flex items-center gap-1 rounded border border-slate-800 bg-slate-900/70 p-0.5">
-          {(
-            [
-              ['none', 'Aus'],
-              ['sp500', 'S&P 500'],
-              ['gold', 'Gold'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setOverlay(id)}
-              className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition ${
-                overlay === id
-                  ? 'bg-amber-500/20 text-amber-300'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <MacroSparkChart
         series={history.map((p) => ({ date: p.date, value: p.netLiquidity / 1000 }))}
-        overlaySeries={overlaySeries}
-        overlayLabel={overlay === 'sp500' ? 'S&P 500' : overlay === 'gold' ? 'Gold' : undefined}
+        comparisons={macro.comparisons}
+        defaultOverlay="sp500"
         color="#38bdf8"
-        overlayColor="#f59e0b"
         unitSuffix=" Bio."
         decimals={2}
         defaultRange="3Y"

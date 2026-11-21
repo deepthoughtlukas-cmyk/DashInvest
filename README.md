@@ -14,8 +14,8 @@
 - **Gleitende Durchschnitte & Trend-/Momentum-Indikatoren:** EMA 21, SMA 50, SMA 200, VWAP, Supertrend, Bollinger Bänder (inkl. Squeeze), Ichimoku Cloud, Golden/Death Crosses sowie Multi-Pane-Subcharts für **Volumen**, **RSI (14) inkl. Divergenzen**, **MACD** und **ADX / DI+ / DI−**
 
 ### 2. Flexibles Widget-Grid & Makro-Indikatoren (`src/components/widgets/`)
-Frei verschieb- und skalierbare Widgets (`react-grid-layout`) mit 3 Presets (*Analyse-Fokus*, *2×2 Multi-Chart*, *Makro-Cockpit*), `+ Widgets`-Katalog-Drawer, Layout-Sperre und `localStorage`-Persistenz:
-- **US-Marktliquidität (Fed Net Liquidity):** Berechnung aus `WALCL` (Fed-Bilanz, Mio. → Mrd. USD), `WTREGEN` (TGA, Mio. → Mrd. USD) und `RRPONTSYD` (ON RRP, Mrd. USD) inkl. 4W/13W-Impuls und normalisiertem Vergleichs-Overlay gegen S&P 500 oder Gold:
+Frei verschieb- und skalierbare Widgets (`react-grid-layout`) mit 3 Presets (*Analyse-Fokus*, *2×2 Multi-Chart*, *Makro-Cockpit*), `+ Widgets`-Katalog-Drawer, Layout-Sperre, `localStorage`-Persistenz sowie **optionalem normalisiertem S&P-500- & Gold-Vergleichsoverlay in allen 5 Makro-Widgets**:
+- **US-Marktliquidität (Fed Net Liquidity):** Berechnung aus `WALCL` (Fed-Bilanz, Mio. → Mrd. USD), `WTREGEN` (TGA, Mio. → Mrd. USD) und `RRPONTSYD` (ON RRP, Mrd. USD) inkl. 4W/13W-Impuls:
   $$\text{Net Liquidity (Mrd. USD)} = \frac{\text{WALCL}}{1{.}000} - \frac{\text{WTREGEN}}{1{.}000} - \text{RRPONTSYD}$$
 - **US-Dollar-Index (`DXY`):** Live-Kurs, 1T/1W/YTD-Performance, SMA 50/200 Trendstatus
 - **US-Geldmenge `M2` (`M2SL`):** Stand in Bio. USD, YoY-Wachstum & 3M-annualisierte Dynamik

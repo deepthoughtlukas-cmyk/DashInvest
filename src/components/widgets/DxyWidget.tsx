@@ -82,6 +82,8 @@ export const DxyWidget: React.FC<DxyWidgetProps> = ({ macro, isLoading }) => {
 
       <MacroSparkChart
         series={history}
+        comparisons={macro.comparisons}
+        defaultOverlay="none"
         color="#38bdf8"
         thresholds={sma200 ? [{ value: sma200, label: 'SMA200', color: 'rgba(192,132,252,0.55)' }] : []}
         decimals={2}

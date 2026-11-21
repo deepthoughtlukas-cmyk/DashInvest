@@ -76,6 +76,8 @@ export const M2Widget: React.FC<M2WidgetProps> = ({ macro, isLoading }) => {
 
       <MacroSparkChart
         series={history.map((p) => ({ date: p.date, value: p.value / 1000 }))}
+        comparisons={macro.comparisons}
+        defaultOverlay="none"
         color="#10b981"
         unitSuffix=" Bio."
         decimals={2}
