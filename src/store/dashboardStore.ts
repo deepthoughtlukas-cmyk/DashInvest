@@ -11,6 +11,7 @@ import type {
   CatalogAsset,
   ChartStyle,
   ElliottDegree,
+  PersistedWorkspaceState,
   Timeframe,
 } from '../../shared/types.ts';
 import type { FibAnchor } from '../engine/fibonacci.ts';
@@ -276,6 +277,43 @@ interface DashboardState {
   deleteFolder: (folderId: string) => void;
   toggleFolderCollapsed: (folderId: string) => void;
   resetCatalogToDefaults: () => void;
+  hydrateWorkspace: (snapshot: Partial<PersistedWorkspaceState> | null) => void;
+  resetWorkspaceToDefaults: () => void;
+}
+
+const KNOWN_WIDGET_IDS = new Set<string>([
+  'catalog-explorer',
+  'master-chart',
+  'prose-briefing',
+  'signal-matrix',
+  'bookmark-signals-7d',
+  'macro-liquidity',
+  'macro-credit',
+  'macro-dxy',
+  'macro-m2',
+  'macro-us10y',
+  'chart-gold',
+  'chart-silver',
+  'chart-sp500',
+  'chart-nasdaq',
+]);
+
+export function extractWorkspaceSnapshot(state: DashboardState): PersistedWorkspaceState {
+  return {
+    activeSymbol: state.activeSymbol,
+    activeTimeframe: state.activeTimeframe,
+    activePreset: state.activePreset,
+    activeWidgets: [...state.activeWidgets],
+    layouts: state.layouts as Record<string, unknown>,
+    layoutLocked: state.layoutLocked,
+    proseTab: state.proseTab,
+    proseDepth: state.proseDepth,
+    showFundamentalsSidebar: state.showFundamentalsSidebar,
+    chartSettings: { ...state.chartSettings },
+    manualFibs: { ...state.manualFibs },
+    folders: state.folders.map((f) => ({ ...f })),
+    catalogAssets: state.catalogAssets.map((a) => ({ ...a })),
+  };
 }
 
 export const useDashboardStore = create<DashboardState>()(
@@ -524,6 +562,82 @@ export const useDashboardStore = create<DashboardState>()(
             ? state.activeSymbol
             : 'GC=F',
         })),
+
+      hydrateWorkspace: (snapshot) => {
+        if (!snapshot) return;
+        const validPreset: PresetId =
+          snapshot.activePreset === 'multi-chart' || snapshot.activePreset === 'makro-cockpit'
+            ? snapshot.activePreset
+            : 'analyse-fokus';
+
+        const validWidgets = Array.isArray(snapshot.activeWidgets)
+          ? (snapshot.activeWidgets.filter((w) => KNOWN_WIDGET_IDS.has(w)) as WidgetId[])
+          : [];
+        const nextWidgets =
+          validWidgets.length > 0 ? validWidgets : [...PRESET_WIDGETS[validPreset]];
+
+        const validTf: Timeframe =
+          snapshot.activeTimeframe === '15m' ||
+          snapshot.activeTimeframe === '1h' ||
+          snapshot.activeTimeframe === '4h' ||
+          snapshot.activeTimeframe === '1w'
+            ? snapshot.activeTimeframe
+            : '1d';
+
+        set({
+          activeSymbol:
+            typeof snapshot.activeSymbol === 'string' && snapshot.activeSymbol.trim().length > 0
+              ? resolveCanonicalSymbol(snapshot.activeSymbol)
+              : 'GC=F',
+          activeTimeframe: validTf,
+          activePreset: validPreset,
+          activeWidgets: nextWidgets,
+          layouts:
+            snapshot.layouts && typeof snapshot.layouts === 'object'
+              ? (snapshot.layouts as ResponsiveLayouts)
+              : getPresetLayouts(validPreset),
+          layoutLocked: Boolean(snapshot.layoutLocked),
+          proseTab: snapshot.proseTab === 'asset' ? 'asset' : 'macro',
+          proseDepth: snapshot.proseDepth === 'compact' ? 'compact' : 'detailed',
+          showFundamentalsSidebar:
+            typeof snapshot.showFundamentalsSidebar === 'boolean'
+              ? snapshot.showFundamentalsSidebar
+              : true,
+          chartSettings: {
+            ...DEFAULT_CHART_SETTINGS,
+            ...((snapshot.chartSettings ?? {}) as Partial<ChartSettings>),
+          },
+          manualFibs:
+            snapshot.manualFibs && typeof snapshot.manualFibs === 'object'
+              ? (snapshot.manualFibs as Record<string, ManualFibPair>)
+              : {},
+          folders:
+            Array.isArray(snapshot.folders) && snapshot.folders.length > 0
+              ? snapshot.folders.map((f) => ({ ...f }))
+              : DEFAULT_FOLDERS.map((f) => ({ ...f })),
+          catalogAssets:
+            Array.isArray(snapshot.catalogAssets) && snapshot.catalogAssets.length > 0
+              ? snapshot.catalogAssets.map((a) => ({ ...a }))
+              : DEFAULT_CATALOG_ASSETS.map((a) => ({ ...a })),
+        });
+      },
+
+      resetWorkspaceToDefaults: () =>
+        set({
+          activeSymbol: 'GC=F',
+          activeTimeframe: '1d',
+          activePreset: 'analyse-fokus',
+          activeWidgets: [...PRESET_WIDGETS['analyse-fokus']],
+          layouts: getPresetLayouts('analyse-fokus'),
+          layoutLocked: false,
+          proseTab: 'macro',
+          proseDepth: 'detailed',
+          showFundamentalsSidebar: true,
+          chartSettings: { ...DEFAULT_CHART_SETTINGS },
+          manualFibs: {},
+          folders: DEFAULT_FOLDERS.map((f) => ({ ...f })),
+          catalogAssets: DEFAULT_CATALOG_ASSETS.map((a) => ({ ...a })),
+        }),
     }),
     {
       name: 'dashinvest-workspace-v3',

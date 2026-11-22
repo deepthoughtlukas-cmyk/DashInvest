@@ -1,8 +1,12 @@
+import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type {
   AssetFundamentals,
+  AuthSessionResponse,
   Candle,
   MacroPoint,
   QuoteSummary,
@@ -59,6 +63,7 @@ function buildDailySeries(startValue: number, step: number, count = 260): MacroP
 describe('Express API Integration (/api/*)', () => {
   let server: http.Server;
   let baseUrl = '';
+  let tmpDataDir = '';
   let shouldFailMacro = false;
 
   const mockYahoo: MarketDataProvider = {
@@ -201,7 +206,13 @@ describe('Express API Integration (/api/*)', () => {
   };
 
   beforeAll(async () => {
-    const app = createApp({ yahoo: mockYahoo, fred: mockFred, overviewTtlMs: 25 });
+    tmpDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashinvest-api-test-'));
+    const app = createApp({
+      yahoo: mockYahoo,
+      fred: mockFred,
+      overviewTtlMs: 25,
+      dataDir: tmpDataDir,
+    });
     server = http.createServer(app);
     await new Promise<void>((resolve) => {
       server.listen(0, '127.0.0.1', () => resolve());
@@ -212,6 +223,7 @@ describe('Express API Integration (/api/*)', () => {
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    fs.rmSync(tmpDataDir, { recursive: true, force: true });
   });
 
   it('serves /api/health, /api/market/search, batch quotes with partial failures, and multi-asset candles', async () => {
@@ -300,6 +312,7 @@ describe('Express API Integration (/api/*)', () => {
   });
 
   it('returns 502 on cold upstream failure', async () => {
+    const coldDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashinvest-cold-test-'));
     const coldApp = createApp({
       yahoo: mockYahoo,
       fred: {
@@ -308,6 +321,7 @@ describe('Express API Integration (/api/*)', () => {
           throw new Error('FRED unreachable');
         },
       },
+      dataDir: coldDataDir,
     });
     const coldServer = http.createServer(coldApp);
     await new Promise<void>((resolve) => coldServer.listen(0, '127.0.0.1', () => resolve()));
@@ -319,6 +333,117 @@ describe('Express API Integration (/api/*)', () => {
       expect(body.error).toContain('FRED unreachable');
     } finally {
       await new Promise<void>((resolve) => coldServer.close(() => resolve()));
+      fs.rmSync(coldDataDir, { recursive: true, force: true });
     }
+  });
+
+  it('supports profile registration, cookie auth, continuous workspace saving, login/logout & deletion', async () => {
+    // 1. Unauthenticated /api/auth/me returns 200 authenticated=false cleanly
+    const guestMe = await fetch(`${baseUrl}/api/auth/me`);
+    expect(guestMe.status).toBe(200);
+    expect(await guestMe.json()).toEqual({ authenticated: false, user: null, workspace: null });
+
+    // Unauthenticated PUT /api/profile/workspace returns 401
+    const unauthPut = await fetch(`${baseUrl}/api/profile/workspace`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activeSymbol: 'AAPL' }),
+    });
+    expect(unauthPut.status).toBe(401);
+
+    // 2. Register user & obtain HttpOnly session cookie
+    const regRes = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: 'lukas',
+        displayName: 'Lukas Trader',
+        password: 'mypassword',
+        initialWorkspace: {
+          activeSymbol: 'NVDA',
+          activeTimeframe: '1d',
+          activePreset: 'analyse-fokus',
+          activeWidgets: ['master-chart'],
+          layouts: {},
+          layoutLocked: false,
+          proseTab: 'macro',
+          proseDepth: 'detailed',
+          showFundamentalsSidebar: true,
+          chartSettings: {},
+          manualFibs: {},
+          folders: [],
+          catalogAssets: [],
+        },
+      }),
+    });
+    expect(regRes.status).toBe(201);
+    const setCookieHeader = regRes.headers.get('set-cookie') ?? '';
+    const sessionCookie = setCookieHeader.split(';')[0];
+    expect(sessionCookie).toContain('dashinvest_session=');
+
+    const regJson = (await regRes.json()) as AuthSessionResponse;
+    expect(regJson.authenticated).toBe(true);
+    expect(regJson.user?.displayName).toBe('Lukas Trader');
+    expect(regJson.workspace?.activeSymbol).toBe('NVDA');
+
+    // 3. Auto-save workspace via PUT & verify persistence on /api/auth/me
+    const putRes = await fetch(`${baseUrl}/api/profile/workspace`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie },
+      body: JSON.stringify({
+        ...regJson.workspace,
+        activeSymbol: 'AAPL',
+        showFundamentalsSidebar: false,
+      }),
+    });
+    expect(putRes.status).toBe(200);
+
+    const meRes = await fetch(`${baseUrl}/api/auth/me`, {
+      headers: { Cookie: sessionCookie },
+    });
+    const meJson = (await meRes.json()) as AuthSessionResponse;
+    expect(meJson.authenticated).toBe(true);
+    expect(meJson.workspace?.activeSymbol).toBe('AAPL');
+    expect(meJson.workspace?.showFundamentalsSidebar).toBe(false);
+
+    // 4. Profiles list & Logout
+    const profilesRes = await fetch(`${baseUrl}/api/auth/profiles`);
+    expect(profilesRes.status).toBe(200);
+    const profilesJson = (await profilesRes.json()) as { profiles: Array<{ username: string }> };
+    expect(profilesJson.profiles.some((p) => p.username === 'lukas')).toBe(true);
+
+    await fetch(`${baseUrl}/api/auth/logout`, {
+      method: 'POST',
+      headers: { Cookie: sessionCookie },
+    });
+    const afterLogoutMe = await fetch(`${baseUrl}/api/auth/me`, {
+      headers: { Cookie: sessionCookie },
+    });
+    expect(((await afterLogoutMe.json()) as AuthSessionResponse).authenticated).toBe(false);
+
+    // 5. Re-login, rename & delete account
+    const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'lukas', password: 'mypassword' }),
+    });
+    expect(loginRes.status).toBe(200);
+    const newCookie = (loginRes.headers.get('set-cookie') ?? '').split(';')[0];
+    const loginJson = (await loginRes.json()) as AuthSessionResponse;
+    expect(loginJson.workspace?.activeSymbol).toBe('AAPL');
+
+    const patchRes = await fetch(`${baseUrl}/api/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: newCookie },
+      body: JSON.stringify({ displayName: 'Lukas Pro' }),
+    });
+    expect(patchRes.status).toBe(200);
+
+    const delRes = await fetch(`${baseUrl}/api/profile`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Cookie: newCookie },
+      body: JSON.stringify({ password: 'mypassword' }),
+    });
+    expect(delRes.status).toBe(200);
   });
 });

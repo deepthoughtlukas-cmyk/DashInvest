@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { getPresetLayouts, useDashboardStore } from '../src/store/dashboardStore.ts';
+import {
+  extractWorkspaceSnapshot,
+  getPresetLayouts,
+  useDashboardStore,
+} from '../src/store/dashboardStore.ts';
 
 describe('Dashboard Zustand Store & Presets', () => {
   beforeEach(() => {
@@ -90,5 +94,31 @@ describe('Dashboard Zustand Store & Presets', () => {
 
     updated.setManualFib('^NDX', null);
     expect(useDashboardStore.getState().manualFibs['^NDX']).toBeUndefined();
+  });
+
+  it('extracts, hydrates and resets workspace snapshots cleanly for profile switching', () => {
+    const store = useDashboardStore.getState();
+    store.setActiveSymbol('AAPL');
+    store.setShowFundamentalsSidebar(false);
+    store.toggleBookmark('AAPL');
+
+    const snapshot = extractWorkspaceSnapshot(useDashboardStore.getState());
+    expect(snapshot.activeSymbol).toBe('AAPL');
+    expect(snapshot.showFundamentalsSidebar).toBe(false);
+    expect(snapshot.catalogAssets.find((a) => a.symbol === 'AAPL')?.bookmarked).toBe(true);
+
+    // Reset to clean guest state (logout)
+    store.resetWorkspaceToDefaults();
+    const guest = useDashboardStore.getState();
+    expect(guest.activeSymbol).toBe('GC=F');
+    expect(guest.showFundamentalsSidebar).toBe(true);
+    expect(guest.catalogAssets.find((a) => a.symbol === 'AAPL')?.bookmarked).toBe(false);
+
+    // Hydrate User A snapshot back into store (login)
+    store.hydrateWorkspace(snapshot);
+    const restored = useDashboardStore.getState();
+    expect(restored.activeSymbol).toBe('AAPL');
+    expect(restored.showFundamentalsSidebar).toBe(false);
+    expect(restored.catalogAssets.find((a) => a.symbol === 'AAPL')?.bookmarked).toBe(true);
   });
 });

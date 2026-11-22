@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n api,web -c cyan,green \"tsx watch server/index.ts\" \"vite\"",
+    "dev": "concurrently -k -n api,web -c cyan,green \"tsx watch --exclude data/** --exclude test-results/** --exclude playwright-report/** --exclude tests/** --exclude e2e/** server/index.ts\" \"vite\"",
     "server": "tsx server/index.ts",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",

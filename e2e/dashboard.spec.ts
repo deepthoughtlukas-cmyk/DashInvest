@@ -442,4 +442,119 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     expect(errors.consoleErrors).toEqual([]);
     expect(errors.failedApiResponses).toEqual([]);
   });
+
+  test('registers user profiles, auto-saves view/bookmarks/folders across reload & switches between independent users', async ({
+    page,
+  }) => {
+    const errors = attachErrorListeners(page);
+    await waitForDashboardReady(page);
+
+    const runId = Date.now().toString(36);
+    const userA = `e2ea_${runId}`;
+    const userB = `e2eb_${runId}`;
+    const pass = 'testpass123';
+
+    const profileBtn = page.getByLabel('Profil und Anmeldung öffnen');
+    const catalogCard = widgetCard(page, 'Wertpapier-Katalog & Bookmarks');
+    const chartCard = widgetCard(page, 'Master Chart Terminal');
+
+    // 1. Register User A importing current workspace
+    await profileBtn.click();
+    const dialog = page.getByRole('dialog', { name: 'Benutzerprofil & Anmeldung' });
+    await dialog.getByRole('button', { name: 'Neues Profil', exact: true }).click();
+    await dialog.getByPlaceholder('z. B. lukas', { exact: true }).fill(userA);
+    await dialog.getByPlaceholder('z. B. Lukas Portfolio').fill('Profil A');
+    await dialog.getByPlaceholder('Mindestens 4 Zeichen').fill(pass);
+    await dialog.getByRole('button', { name: 'Profil erstellen', exact: true }).click();
+
+    await expect(profileBtn.getByText('Profil A')).toBeVisible({ timeout: 15_000 });
+    await dialog.getByLabel('Profil-Dialog schließen').click();
+
+    // 2. Customize User A view: bookmark Apple, create folder ProfilA-Fokus, select AAPL, collapse Fundamental sidebar
+    await catalogCard.getByRole('button', { name: 'Bookmark Apple' }).click();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await catalogCard.getByRole('button', { name: '+ Ordner', exact: true }).click();
+    await catalogCard.getByPlaceholder(/Ordnername/).fill('ProfilA-Fokus');
+    await catalogCard.getByRole('button', { name: 'Erstellen', exact: true }).click();
+    await expect(catalogCard.getByRole('button', { name: /^ProfilA-Fokus \d+$/ })).toBeVisible();
+
+    await catalogCard.getByRole('button', { name: /AAPL/ }).click();
+    await expect(chartCard.getByText(/Apple Inc\./).first()).toBeVisible({ timeout: 20_000 });
+
+    await chartCard.getByRole('button', { name: 'Fundamental-Sidebar einklappen' }).click();
+    await expect(chartCard.getByLabel('Fundamentaldaten-Sidebar')).toBeHidden();
+
+    // Wait for continuous server auto-save completion
+    await expect(profileBtn.getByText('Gespeichert')).toBeVisible({ timeout: 15_000 });
+
+    // 3. Reload browser -> session cookie restores User A + exact saved view & bookmarks
+    await page.reload();
+    await expect(page.getByText(/Makro:/)).toBeVisible({ timeout: 25_000 });
+    await expect(profileBtn.getByText('Profil A')).toBeVisible({ timeout: 15_000 });
+    await expect(catalogCard.getByRole('button', { name: /^ProfilA-Fokus \d+$/ })).toBeVisible();
+    await expect(chartCard.getByText(/Apple Inc\./).first()).toBeVisible({ timeout: 20_000 });
+    await expect(chartCard.getByLabel('Fundamentaldaten-Sidebar')).toBeHidden();
+
+    // 4. Logout User A -> resets cleanly back to guest state
+    await profileBtn.click();
+    await dialog.getByRole('button', { name: /Abmelden \/ Profil wechseln/ }).click();
+    await expect(profileBtn.getByText('Profil / Anmelden')).toBeVisible({ timeout: 15_000 });
+    await expect(catalogCard.getByRole('button', { name: /^ProfilA-Fokus \d+$/ })).toBeHidden();
+
+    // 5. Register User B with clean workspace -> add ProfilB-Fokus -> save -> logout
+    await dialog.getByRole('button', { name: 'Neues Profil', exact: true }).click();
+    await dialog.getByPlaceholder('z. B. lukas', { exact: true }).fill(userB);
+    await dialog.getByPlaceholder('z. B. Lukas Portfolio').fill('Profil B');
+    await dialog.getByPlaceholder('Mindestens 4 Zeichen').fill(pass);
+    const importCheckbox = dialog.getByRole('checkbox');
+    if (await importCheckbox.isChecked()) {
+      await importCheckbox.uncheck();
+    }
+    await dialog.getByRole('button', { name: 'Profil erstellen', exact: true }).click();
+
+    await expect(profileBtn.getByText('Profil B')).toBeVisible({ timeout: 15_000 });
+    await dialog.getByLabel('Profil-Dialog schließen').click();
+    await expect(catalogCard.getByRole('button', { name: /^ProfilA-Fokus \d+$/ })).toBeHidden();
+
+    await catalogCard.getByRole('button', { name: '+ Ordner', exact: true }).click();
+    await catalogCard.getByPlaceholder(/Ordnername/).fill('ProfilB-Fokus');
+    await catalogCard.getByRole('button', { name: 'Erstellen', exact: true }).click();
+    await expect(catalogCard.getByRole('button', { name: /^ProfilB-Fokus \d+$/ })).toBeVisible();
+    await expect(profileBtn.getByText('Gespeichert')).toBeVisible({ timeout: 15_000 });
+
+    await profileBtn.click();
+    await dialog.getByRole('button', { name: /Abmelden \/ Profil wechseln/ }).click();
+
+    // 6. Log back in as User A -> proves server workspace restored ProfilA-Fokus and kept User B isolated
+    await dialog.getByPlaceholder('z. B. lukas', { exact: true }).fill(userA);
+    await dialog.getByPlaceholder('••••••••').fill(pass);
+    await dialog.getByRole('button', { name: 'Jetzt anmelden', exact: true }).click();
+    await expect(profileBtn.getByText('Profil A')).toBeVisible({ timeout: 15_000 });
+    await dialog.getByLabel('Profil-Dialog schließen').click();
+
+    await expect(catalogCard.getByRole('button', { name: /^ProfilA-Fokus \d+$/ })).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /^ProfilB-Fokus \d+$/ })).toBeHidden();
+    await expect(chartCard.getByLabel('Fundamentaldaten-Sidebar')).toBeHidden();
+
+    // 7. Cleanly delete both temporary E2E profiles via UI
+    await profileBtn.click();
+    await dialog.getByRole('button', { name: /Profil dauerhaft löschen/ }).click();
+    await dialog.getByPlaceholder('Passwort bestätigen').fill(pass);
+    await dialog.getByRole('button', { name: 'Löschen', exact: true }).click();
+    await expect(profileBtn.getByText('Profil / Anmelden')).toBeVisible({ timeout: 15_000 });
+
+    await dialog.getByPlaceholder('z. B. lukas', { exact: true }).fill(userB);
+    await dialog.getByPlaceholder('••••••••').fill(pass);
+    await dialog.getByRole('button', { name: 'Jetzt anmelden', exact: true }).click();
+    await expect(profileBtn.getByText('Profil B')).toBeVisible({ timeout: 15_000 });
+    await dialog.getByRole('button', { name: /Profil dauerhaft löschen/ }).click();
+    await dialog.getByPlaceholder('Passwort bestätigen').fill(pass);
+    await dialog.getByRole('button', { name: 'Löschen', exact: true }).click();
+    await expect(profileBtn.getByText('Profil / Anmelden')).toBeVisible({ timeout: 15_000 });
+    await dialog.getByLabel('Profil-Dialog schließen').click();
+
+    expect(errors.pageErrors).toEqual([]);
+    expect(errors.consoleErrors).toEqual([]);
+    expect(errors.failedApiResponses).toEqual([]);
+  });
 });

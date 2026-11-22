@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
 import {
   Activity,
+  Check,
+  CloudOff,
   FolderOpen,
   LayoutGrid,
+  Loader2,
   Lock,
   Plus,
   RefreshCw,
   RotateCcw,
   Unlock,
+  UserCircle2,
   X,
 } from 'lucide-react';
+import type { UserProfileSummary } from '../../../shared/types.ts';
+import type { SyncStatus } from '../../hooks/useProfileSync.ts';
 import type { MacroRegimeEvaluation } from '../../engine/signals.ts';
 import { useDashboardStore, type PresetId, type WidgetId } from '../../store/dashboardStore.ts';
 import { ALL_WIDGET_IDS, WIDGET_REGISTRY } from './WidgetRegistry.ts';
@@ -18,8 +24,11 @@ interface TopBarProps {
   macroRegime: MacroRegimeEvaluation | null;
   updatedAt?: string;
   isFetching: boolean;
+  profileUser: UserProfileSummary | null;
+  syncStatus: SyncStatus;
   onRefreshAll: () => void;
   onOpenCatalog: () => void;
+  onOpenProfile: () => void;
 }
 
 const PRESETS: Array<{ id: PresetId; label: string }> = [
@@ -32,8 +41,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   macroRegime,
   updatedAt,
   isFetching,
+  profileUser,
+  syncStatus,
   onRefreshAll,
   onOpenCatalog,
+  onOpenProfile,
 }) => {
   const {
     activePreset,
@@ -163,6 +175,54 @@ export const TopBar: React.FC<TopBarProps> = ({
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin text-sky-400' : ''}`} />
             <span className="font-mono-num hidden sm:inline">{formattedTime}</span>
+          </button>
+
+          <button
+            type="button"
+            aria-label="Profil und Anmeldung öffnen"
+            onClick={onOpenProfile}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+              profileUser
+                ? 'border-emerald-500/40 bg-emerald-500/12 text-slate-100 hover:bg-emerald-500/20'
+                : 'border-slate-700 bg-slate-900/90 text-slate-200 hover:border-sky-500/50 hover:text-white'
+            }`}
+          >
+            {profileUser ? (
+              <>
+                <span
+                  className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-slate-950"
+                  style={{ backgroundColor: profileUser.avatarColor }}
+                >
+                  {profileUser.displayName.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="max-w-[110px] truncate font-semibold">
+                  {profileUser.displayName}
+                </span>
+                <span className="flex items-center gap-0.5 text-[10px] text-emerald-300">
+                  {syncStatus === 'saving' ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin text-sky-300" />
+                      <span className="hidden md:inline text-sky-300">Speichert…</span>
+                    </>
+                  ) : syncStatus === 'error' ? (
+                    <>
+                      <CloudOff className="h-3 w-3 text-rose-400" />
+                      <span className="hidden md:inline text-rose-300">Fehler</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-3 w-3" />
+                      <span className="hidden md:inline">Gespeichert</span>
+                    </>
+                  )}
+                </span>
+              </>
+            ) : (
+              <>
+                <UserCircle2 className="h-3.5 w-3.5 text-sky-400" />
+                <span>Profil / Anmelden</span>
+              </>
+            )}
           </button>
         </div>
       </header>

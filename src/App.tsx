@@ -3,9 +3,11 @@ import { FolderTree, X } from 'lucide-react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useDashboardStore } from './store/dashboardStore.ts';
 import { useDashboardIntelligence } from './hooks/useMarketData.ts';
+import { useProfileSync } from './hooks/useProfileSync.ts';
 import { TopBar } from './components/layout/TopBar.tsx';
 import { DashboardGrid } from './components/layout/DashboardGrid.tsx';
 import { CatalogExplorerWidget } from './components/widgets/CatalogExplorerWidget.tsx';
+import { ProfileModal } from './components/profile/ProfileModal.tsx';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,6 +29,9 @@ const DashboardWorkspace: React.FC = () => {
   } = useDashboardStore();
 
   const [catalogDrawerOpen, setCatalogDrawerOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  const profileSync = useProfileSync();
 
   const {
     quotesQuery,
@@ -60,10 +65,13 @@ const DashboardWorkspace: React.FC = () => {
         macroRegime={macroRegime}
         updatedAt={updatedAt}
         isFetching={isFetching}
+        profileUser={profileSync.user}
+        syncStatus={profileSync.syncStatus}
         onRefreshAll={() => {
           void qc.invalidateQueries();
         }}
         onOpenCatalog={() => setCatalogDrawerOpen(true)}
+        onOpenProfile={() => setProfileModalOpen(true)}
       />
 
       <main className="mx-auto max-w-[1920px]">
@@ -111,6 +119,22 @@ const DashboardWorkspace: React.FC = () => {
           </div>
         </div>
       )}
+      <ProfileModal
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        user={profileSync.user}
+        syncStatus={profileSync.syncStatus}
+        lastSavedAt={profileSync.lastSavedAt}
+        syncError={profileSync.syncError}
+        profilesList={profileSync.profilesList}
+        onRefreshProfiles={profileSync.refreshProfiles}
+        onRegister={profileSync.register}
+        onLogin={profileSync.login}
+        onLogout={profileSync.logout}
+        onFlushNow={profileSync.flushNow}
+        onUpdateProfile={profileSync.updateProfile}
+        onDeleteAccount={profileSync.deleteAccount}
+      />
     </div>
   );
 };

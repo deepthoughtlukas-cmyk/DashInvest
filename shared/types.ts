@@ -14,6 +14,37 @@ export type AssetClass =
   | 'bonds'
   | 'etf';
 
+export interface UserProfileSummary {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarColor: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PersistedWorkspaceState {
+  activeSymbol: string;
+  activeTimeframe: Timeframe;
+  activePreset: 'analyse-fokus' | 'multi-chart' | 'makro-cockpit';
+  activeWidgets: string[];
+  layouts: Record<string, unknown>;
+  layoutLocked: boolean;
+  proseTab: 'macro' | 'asset';
+  proseDepth: 'compact' | 'detailed';
+  showFundamentalsSidebar: boolean;
+  chartSettings: Record<string, unknown>;
+  manualFibs: Record<string, unknown>;
+  folders: AssetFolder[];
+  catalogAssets: CatalogAsset[];
+}
+
+export interface AuthSessionResponse {
+  authenticated: boolean;
+  user: UserProfileSummary | null;
+  workspace: PersistedWorkspaceState | null;
+}
+
 export interface CatalogAsset {
   symbol: string;
   name: string;

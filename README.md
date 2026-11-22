@@ -28,6 +28,10 @@ Frei verschieb- und skalierbare Widgets (`react-grid-layout`) mit 3 Presets (*An
 - **Bookmark-Signale (7 Tage):** Eigenständiges Widget mit allen ausgelösten Trend-, Momentum- und Fibonacci-Signalen der letzten 7 Tage für sämtliche gesetzten Bookmarks inkl. Richtungs-/Asset-Filter und Klick-Fokus in den Master-Chart
 - **Markt- & Makro-Briefing (Prosa):** Automatisch generierte deutsche Profi-Analyse inkl. *Wichtigste Schlussfolgerungen*, *Kompakt/Ausführlich*-Modus, Markdown-Export und Vollbild-Lesemodus
 
+### 3. Benutzerprofile, Anmeldung & kontinuierliche Speicherung (`server/profileStore.ts` & `src/hooks/useProfileSync.ts`)
+- **Profil-Anmeldung & Registrierung:** Profile können mit Benutzername, Passwort (`scrypt`-Hash) und `HttpOnly`-Session-Cookie erstellt und gewechselt werden (`/api/auth/*`)
+- **Kontinuierliche Auto-Speicherung:** Jede Änderung an Widgets, Layouts, aktiven Symbolen, Chart-Einstellungen, manuellen Fibonacci-Ankern, Ordnern und Bookmarks wird automatisch per Debounce + `keepalive` auf den Server synchronisiert (`/api/profile/workspace`, lokal persistiert unter `data/`) und bleibt nach Neuladen sowie über Profilwechsel hinweg vollständig pro Benutzer erhalten
+
 ---
 
 ## Datenquellen & Konfiguration

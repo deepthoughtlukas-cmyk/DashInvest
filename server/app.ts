@@ -7,10 +7,12 @@ import {
 import type {
   MacroOverview,
   MacroPoint,
+  PersistedWorkspaceState,
   QuoteSummary,
   Timeframe,
 } from '../shared/types.ts';
 import { TtlCache } from './cache.ts';
+import { ProfileStore, ProfileStoreError } from './profileStore.ts';
 import type { MacroDataProvider, MarketDataProvider } from './providers/types.ts';
 import { YahooFinanceProvider } from './providers/yahooProvider.ts';
 import {
@@ -216,6 +218,39 @@ export interface CreateAppOptions {
   yahoo?: MarketDataProvider;
   fred?: MacroDataProvider;
   overviewTtlMs?: number;
+  profileStore?: ProfileStore;
+  dataDir?: string;
+}
+
+const SESSION_COOKIE = 'dashinvest_session';
+const SESSION_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function parseCookies(header?: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!header) return out;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq <= 0) continue;
+    const key = part.slice(0, eq).trim();
+    const rawVal = part.slice(eq + 1).trim();
+    if (!key) continue;
+    try {
+      out[key] = decodeURIComponent(rawVal);
+    } catch {
+      out[key] = rawVal;
+    }
+  }
+  return out;
+}
+
+function sendProfileError(res: express.Response, err: unknown): void {
+  if (err instanceof ProfileStoreError) {
+    res.status(err.statusCode).json({ error: err.message });
+    return;
+  }
+  res.status(500).json({
+    error: err instanceof Error ? err.message : 'Interner Profilfehler',
+  });
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -223,13 +258,156 @@ export function createApp(options: CreateAppOptions = {}) {
   const fred = options.fred ?? new FredProvider();
   const overviewTtlMs = options.overviewTtlMs ?? 5 * 60_000;
   const overviewCache = new TtlCache();
+  const profileStore = options.profileStore ?? new ProfileStore(options.dataDir);
 
   const app = express();
-  app.use(cors());
-  app.use(express.json());
+  app.use(cors({ origin: true, credentials: true }));
+  app.use(express.json({ limit: '2mb' }));
+
+  const readSessionToken = (req: express.Request): string | undefined => {
+    const cookies = parseCookies(req.headers.cookie);
+    return cookies[SESSION_COOKIE];
+  };
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, service: 'dashinvest-api', timestamp: new Date().toISOString() });
+  });
+
+  // --- User Profile, Auth & Continuous Workspace Persistence ---
+  app.get('/api/auth/profiles', (_req, res) => {
+    res.json({ profiles: profileStore.listPublicProfiles() });
+  });
+
+  app.get('/api/auth/me', (req, res) => {
+    const token = readSessionToken(req);
+    const session = profileStore.getSession(token);
+    if (!session) {
+      res.json({ authenticated: false, user: null, workspace: null });
+      return;
+    }
+    res.json({
+      authenticated: true,
+      user: session.user,
+      workspace: session.workspace,
+    });
+  });
+
+  app.post('/api/auth/register', (req, res) => {
+    try {
+      const body = (req.body ?? {}) as {
+        username?: string;
+        displayName?: string;
+        password?: string;
+        avatarColor?: string;
+        initialWorkspace?: PersistedWorkspaceState | null;
+      };
+      const result = profileStore.register({
+        username: String(body.username ?? ''),
+        displayName: body.displayName,
+        password: String(body.password ?? ''),
+        avatarColor: body.avatarColor,
+        initialWorkspace: body.initialWorkspace ?? null,
+      });
+      res.cookie(SESSION_COOKIE, result.token, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: SESSION_COOKIE_MAX_AGE_MS,
+      });
+      res.status(201).json({
+        authenticated: true,
+        user: result.user,
+        workspace: result.workspace,
+      });
+    } catch (err) {
+      sendProfileError(res, err);
+    }
+  });
+
+  app.post('/api/auth/login', (req, res) => {
+    try {
+      const body = (req.body ?? {}) as { username?: string; password?: string };
+      const result = profileStore.login(
+        String(body.username ?? ''),
+        String(body.password ?? ''),
+      );
+      res.cookie(SESSION_COOKIE, result.token, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: SESSION_COOKIE_MAX_AGE_MS,
+      });
+      res.json({
+        authenticated: true,
+        user: result.user,
+        workspace: result.workspace,
+      });
+    } catch (err) {
+      sendProfileError(res, err);
+    }
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    const token = readSessionToken(req);
+    profileStore.logout(token);
+    res.clearCookie(SESSION_COOKIE, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+    });
+    res.json({ ok: true });
+  });
+
+  app.put('/api/profile/workspace', (req, res) => {
+    const session = profileStore.getSession(readSessionToken(req));
+    if (!session) {
+      res.status(401).json({ error: 'Nicht angemeldet.' });
+      return;
+    }
+    try {
+      const result = profileStore.saveWorkspace(
+        session.user.id,
+        req.body as PersistedWorkspaceState,
+      );
+      res.json(result);
+    } catch (err) {
+      sendProfileError(res, err);
+    }
+  });
+
+  app.patch('/api/profile', (req, res) => {
+    const session = profileStore.getSession(readSessionToken(req));
+    if (!session) {
+      res.status(401).json({ error: 'Nicht angemeldet.' });
+      return;
+    }
+    try {
+      const body = (req.body ?? {}) as { displayName?: string; avatarColor?: string };
+      const user = profileStore.updateProfile(session.user.id, body);
+      res.json({ user });
+    } catch (err) {
+      sendProfileError(res, err);
+    }
+  });
+
+  app.delete('/api/profile', (req, res) => {
+    const session = profileStore.getSession(readSessionToken(req));
+    if (!session) {
+      res.status(401).json({ error: 'Nicht angemeldet.' });
+      return;
+    }
+    try {
+      const body = (req.body ?? {}) as { password?: string };
+      profileStore.deleteProfile(session.user.id, String(body.password ?? ''));
+      res.clearCookie(SESSION_COOKIE, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      sendProfileError(res, err);
+    }
   });
 
   app.get('/api/market/search', async (req, res) => {
