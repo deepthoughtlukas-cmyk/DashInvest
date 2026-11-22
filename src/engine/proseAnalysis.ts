@@ -1,4 +1,4 @@
-import type { MacroOverview, QuoteSummary, Timeframe } from '../../shared/types.ts';
+import type { AssetClass, MacroOverview, QuoteSummary, Timeframe } from '../../shared/types.ts';
 import type { FullAssetAnalysis, MacroRegimeEvaluation } from './signals.ts';
 
 export interface ProseConclusion {
@@ -69,127 +69,85 @@ export function generateMacroProseReport(
   const y10 = macro.us10y;
   const cs = macro.creditSpreads;
   const dxy = macro.dxy;
+  const nlT = fmtNum(nl.currentT, 2);
 
-  const nlDirectionText =
+  // Compact Executive Summary (max 2 crisp sentences)
+  const compactSummary =
+    regime.regime === 'expansion'
+      ? `Frische Marktliquidität (${nlT} Bio. $) und entspannte Kreditmärkte (${cs.hyOasBps} bps) geben Rückenwind. Kapital fließt in Risikoanlagen — Rücksetzer werden tendenziell aufgefangen.`
+      : regime.regime === 'risk-off'
+        ? `Knapper werdende Liquidität (${nlT} Bio. $) und steigender Kreditstress (${cs.hyOasBps} bps) setzen Risikoanlagen unter Druck. Sicherheit hat aktuell Vorrang vor Renditejagd.`
+        : `Gemischtes Bild bei ${nlT} Bio. $ Liquidität und ${cs.hyOasBps} bps Kreditaufschlägen: Weder Panik noch breite Rally — entscheidend ist jetzt selektive Titelauswahl.`;
+
+  // 1. Geldfluss & Liquidität
+  const liqFlow =
     nl.delta4wB > 25
-      ? 'spürbar expansiv und liefert Risikoanlagen Rückenwind'
+      ? `In den letzten vier Wochen flossen +${fmtNum(nl.delta4wB, 0)} Mrd. $ netto ins System zurück.`
       : nl.delta4wB < -25
-        ? 'restriktiv und entzieht den Märkten spürbar Überschussliquidität'
-        : 'weitgehend stabil ohne akuten Liquiditätsschock';
+        ? `In den letzten vier Wochen wurden dem Markt ${fmtNum(Math.abs(nl.delta4wB), 0)} Mrd. $ Liquidität entzogen.`
+        : 'Die US-Marktliquidität bewegt sich auf 4-Wochen-Sicht stabil seitwärts.';
 
-  const largestDrain =
-    nl.tgaB > nl.rrpB
-      ? `das US-Finanzministerium über das Treasury General Account (TGA: ${fmtNum(nl.tgaB, 0)} Mrd. USD)`
-      : `die Overnight Reverse Repo Fazilität (ON RRP: ${fmtNum(nl.rrpB, 1)} Mrd. USD)`;
+  const driverMeaning =
+    nl.tgaB > nl.rrpB * 4
+      ? 'Hauptbremsklotz bleibt das US-Finanzministerium, das über seine Staatskasse (TGA) Geld bindet.'
+      : 'Abflüsse aus dem Geldmarkt (ON RRP) federn die restriktive Fed-Bilanz spürbar ab.';
 
-  const m2Interpretation =
+  const m2Meaning =
     m2.status === 'expanding'
-      ? `Die US-Geldmenge M2 wächst wieder (${fmtSigned(m2.yoyPercent, 1, ' %')} YoY, 3M-annualisiert ${fmtSigned(
-          m2.threeMonthAnnualizedPercent,
-          1,
-          ' %',
-        )}), was mittelfristig insbesondere knappe Sachwerte wie Gold und Silber stützt.`
+      ? `Parallel wächst die Geldmenge M2 (${fmtSigned(m2.yoyPercent, 1, ' %')} YoY) — ein mittelfristiges Polster für knappe Sachwerte.`
       : m2.status === 'contracting'
-        ? `Die US-Geldmenge M2 schrumpft (${fmtSigned(m2.yoyPercent, 1, ' %')} YoY), was auf anhaltend straffe monetäre Rahmenbedingungen hinweist.`
-        : `Die US-Geldmenge M2 bewegt sich seitwärts (${fmtSigned(m2.yoyPercent, 1, ' %')} YoY) und liefert derzeit weder starken Inflations- noch Deflationsimpuls.`;
+        ? 'Die schrumpfende Geldmenge M2 entzieht Spekulationen zusätzlichen Treibstoff.'
+        : 'M2 stagniert und liefert weder Inflationsschub noch Deflationsdruck.';
 
-  const creditText =
-    cs.regime === 'risk-on'
-      ? `Am Kreditmarkt herrscht hohe Risikobereitschaft: Die High-Yield-Spreads (HY OAS) notieren bei ruhigen ${cs.hyOasBps} bps (${cs.percentile5y}. Perzentil der letzten 5 Jahre) und signalisieren keine akute Ausfallangst.`
-      : cs.regime === 'stress'
-        ? `Warnsignal vom Kreditmarkt: Die High-Yield-Spreads sind auf erhöhte ${cs.hyOasBps} bps (${cs.percentile5y}. Perzentil) geklettert, was auf wachsende Refinanzierungsrisiken und Risk-Off-Druck hindeutet.`
-        : `Die High-Yield Credit Spreads liegen bei ${cs.hyOasBps} bps (${cs.percentile5y}. Perzentil, 1M: ${fmtSigned(
-            cs.change1mBps,
-            0,
-            ' bps',
-          )}) in einer neutral-wachsamen Zone.`;
+  // 2. Zinsen, Dollar & Risikoappetit
+  const ratesEffect =
+    y10.yieldPercent >= 4.75
+      ? `Hohe 10J-Renditen (${fmtNum(y10.yieldPercent, 2)} %) drücken auf die Bewertung wachstumsstarker Aktien.`
+      : y10.change1mBps <= -15
+        ? `Nachgebende 10J-Renditen (${fmtNum(y10.yieldPercent, 2)} %) entlasten Aktien und zinsloses Gold.`
+        : `Stabile 10J-Renditen (${fmtNum(y10.yieldPercent, 2)} %) wirken aktuell neutral auf die Märkte.`;
 
-  const curveText =
-    y10.spread2s10sBps !== null
-      ? y10.spread2s10sBps < 0
-        ? `Die Zinsstrukturkurve (2s10s) bleibt mit ${y10.spread2s10sBps} bps invertiert und mahnt konjunkturell zur Vorsicht.`
-        : `Der 2s10s-Spread notiert bei ${fmtSigned(y10.spread2s10sBps, 0, ' bps')} (${
-            y10.curveStatus === 'flat' ? 'flach' : 'positiv normalisiert'
-          }).`
+  const curveNote =
+    y10.spread2s10sBps !== null && y10.spread2s10sBps < 0
+      ? ' Die invertierte Zinskurve mahnt konjunkturell jedoch weiter zur Wachsamkeit.'
       : '';
 
-  const dxyText =
-    dxy.trend === 'bullish'
-      ? `Der US-Dollar-Index (DXY) zeigt bei ${fmtNum(dxy.quote.price, 2)} Punkten einen intakten Aufwärtstrend${
-          dxy.sma50 ? ` über dem SMA 50 (${fmtNum(dxy.sma50, 2)})` : ''
-        } und wirkt als Gegenwind für Edelmetalle.`
-      : dxy.trend === 'bearish'
-        ? `Der US-Dollar-Index (DXY) schwächelt bei ${fmtNum(dxy.quote.price, 2)} Punkten und schafft damit konstruktiven Rückenwind für Gold, Silber und globale Liquidität.`
-        : `Der US-Dollar-Index (DXY) konsolidiert bei ${fmtNum(dxy.quote.price, 2)} Punkten (${fmtSigned(
-            dxy.quote.changePercent,
-            2,
-            ' %',
-          )} heute) ohne klare Trenddominanz.`;
+  const creditAndDollar =
+    cs.regime === 'risk-on'
+      ? `Ruhige Kreditmärkte signalisieren fehlende Rezessionspanik, während ${
+          dxy.trend === 'bearish'
+            ? 'ein schwächerer Dollar Edelmetalle stützt.'
+            : dxy.trend === 'bullish'
+              ? 'ein fester Dollar Rohstoffe ausbremst.'
+              : 'ein stabiler Dollar kaum Gegenwind erzeugt.'
+        }`
+      : cs.regime === 'stress'
+        ? 'Steigende Ausfallprämien am Anleihemarkt warnen hingegen vor akutem Liquiditätsstress.'
+        : `Wachsame Kreditaufschläge und ein ${
+            dxy.trend === 'bearish' ? 'weicher' : dxy.trend === 'bullish' ? 'fester' : 'neutraler'
+          } Dollar bremsen zu große Risiken.`;
 
+  // 3. Was das für die Märkte bedeutet
   const sortedAssets = [...assetSummaries].sort((a, b) => b.confluence - a.confluence);
   const strongest = sortedAssets[0];
   const weakest = sortedAssets[sortedAssets.length - 1];
 
   const crossAssetBody =
-    assetSummaries.length > 0
-      ? `Im aktuellen Makro-Umfeld („${regime.regimeLabel}“, Score ${fmtSigned(
-          regime.score,
-          0,
-        )}) ergibt sich eine klare Differenzierung über die beobachteten Kernmärkte: Technisch und makroökonomisch am stärksten präsentiert sich derzeit ${
-          strongest.name
-        } (Confluence-Score ${fmtSigned(strongest.confluence, 0)} / „${strongest.bias}“), während ${
-          weakest.name
-        } (Score ${fmtSigned(weakest.confluence, 0)}) die relativ geringste Überzeugungskraft zeigt. Gold und Silber reagieren aktuell vor allem auf die Kombination aus DXY-Richtung und 10-Jahres-Renditen, während S&P 500 und Nasdaq 100 primär am Netto-Liquiditätstrend und der Entwicklung der Kredit-Spreads hängen.`
-      : `Die Kombination aus ${fmtNum(nl.currentT, 2)} Bio. USD Netto-Liquidität, ${fmtNum(
-          y10.yieldPercent,
-          2,
-        )} % bei den 10-jährigen US-Renditen und ${cs.hyOasBps} bps High-Yield-Spreads definiert den übergeordneten Risikoappetit für Aktien und Edelmetalle.`;
-
-  const compactSummary = `Das Makro-Gesamtbild signalisiert aktuell das Regime „${regime.regimeLabel}“ (Score ${fmtSigned(
-    regime.score,
-    0,
-  )}/100). Die US-Marktliquidität (Fed Net Liquidity) liegt bei ${fmtNum(
-    nl.currentT,
-    2,
-  )} Bio. USD (4-Wochen-Impuls: ${fmtSigned(nl.delta4wB, 0, ' Mrd. USD')}) und verhält sich damit ${nlDirectionText}. Die 10-jährigen US-Renditen notieren bei ${fmtNum(
-    y10.yieldPercent,
-    2,
-  )} %, während die Credit Spreads (${cs.hyOasBps} bps) ${
-    cs.regime === 'risk-on'
-      ? 'weiterhin stabile Finanzierungsbedingungen bestätigen.'
-      : cs.regime === 'stress'
-        ? 'erhöhten Stress am Anleihemarkt anzeigen.'
-        : 'ein abwartendes Niveau widerspiegeln.'
-  }`;
+    assetSummaries.length > 0 && strongest && weakest
+      ? `Am stärksten überzeugt aktuell ${strongest.name} (${strongest.bias}), während ${weakest.name} im Vergleich hinterherhinkt. Solange Kreditzinsen ruhig bleiben, bestimmen vor allem Dollar-Richtung und Netto-Liquidität die relative Stärke zwischen Edelmetallen, Aktien und Krypto.`
+      : 'Solange Kreditzinsen ruhig bleiben, bestimmen Dollar-Richtung und Netto-Liquidität die Rotation zwischen Edelmetallen, Aktien und Krypto.';
 
   const paragraphs: ProseParagraph[] = [
     {
-      heading: '1. Liquidität & Geldmenge (Fed Net Liquidity & M2)',
-      body: `Die bereinigte US-Netto-Liquidität beläuft sich aktuell auf ${fmtNum(
-        nl.currentB,
-        0,
-      )} Mrd. USD (${fmtNum(nl.currentT, 2)} Bio. USD). Auf Sicht von 4 Wochen veränderte sie sich um ${fmtSigned(
-        nl.delta4wB,
-        0,
-        ' Mrd. USD',
-      )} (${fmtSigned(nl.delta4wPercent, 2, ' %')}) und über 13 Wochen um ${fmtSigned(
-        nl.delta13wB,
-        0,
-        ' Mrd. USD',
-      )}. Ausgehend von der Fed-Bilanzsumme (${fmtNum(
-        nl.fedAssetsB,
-        0,
-      )} Mrd. USD) bindet aktuell vor allem ${largestDrain} Liquidität aus dem Bankensystem. ${m2Interpretation}`,
+      heading: '1. Geldfluss & Liquidität',
+      body: `${liqFlow} ${driverMeaning} ${m2Meaning}`,
     },
     {
-      heading: '2. Zinsen, US-Dollar & Kreditrisiko',
-      body: `Die Rendite 10-jähriger US-Staatsanleihen notiert bei ${fmtNum(
-        y10.yieldPercent,
-        3,
-      )} % (1-Monats-Veränderung: ${fmtSigned(y10.change1mBps, 0, ' bps')}). ${curveText} ${dxyText} ${creditText}`,
+      heading: '2. Zinsen, Dollar & Risikoappetit',
+      body: `${ratesEffect}${curveNote} ${creditAndDollar}`,
     },
     {
-      heading: '3. Cross-Asset-Einordnung (Gold, Silber, S&P 500, Nasdaq 100)',
+      heading: '3. Was das für die Märkte bedeutet',
       body: crossAssetBody,
     },
   ];
@@ -197,42 +155,41 @@ export function generateMacroProseReport(
   const conclusions: ProseConclusion[] = [
     {
       type: 'bias',
-      title: `Makro-Gesamturteil: ${regime.regimeLabel}`,
+      title: 'Grundtendenz',
       text:
         regime.regime === 'expansion'
-          ? 'Liquidität und Kreditmärkte tragen konstruktive Risiko-Allokationen; Rücksetzer in trendstarken Assets bieten eher Einstiegschancen als strukturelle Trendbrüche.'
+          ? 'Konstruktives Umfeld — Liquidität trägt Aufwärtstrends, Rücksetzer bleiben tendenziell Kaufchancen.'
           : regime.regime === 'risk-off'
-            ? 'Vorsicht geboten: Restriktive Liquidität oder anziehende Spreads sprechen für strafferes Risikomanagement, höhere Cash-/Qualitätsquoten und selektive Absicherung.'
-            : 'Übergangs- und Rotationsphase: Weder breite Liquiditätspanik noch ungebremste Expansion — Einzelasset-Charttechnik und Schlüsselmarken entscheiden über das Timing.',
+            ? 'Vorsicht geboten — Kapitalerhalt, geringere Positionsgrößen und Qualität haben Vorrang.'
+            : 'Rotationsphase — breiter Rückenwind fehlt, daher selektiv auf trendstarke Einzelwerte setzen.',
     },
     {
       type: 'opportunity',
-      title: 'Relativer Rückenwind',
+      title: 'Rückenwind',
       text:
         dxy.trend === 'bearish' || m2.status === 'expanding'
-          ? 'Schwächerer/gedeckelter USD und wachsendes M2 begünstigen tendenziell Edelmetalle (Gold/Silber) sowie Qualitätswachstum bei stabilen Realzinsen.'
-          : 'Solange Credit Spreads unter 380–400 bps verbleiben, bleibt das Grundvertrauen für Aktienindizes (S&P 500 / Nasdaq 100) intakt.',
+          ? 'Nachlassender Dollar-Druck und wachsendes M2 spielen vor allem Gold, Silber und liquiditätsnahen Assets in die Karten.'
+          : 'Stabile Kreditmärkte stützen führende Qualitätsaktien und große Indizes bei kontrolliertem Risiko.',
     },
     {
       type: 'risk',
-      title: 'Zentrale Makro-Risiken',
-      text: `Ein Ausbruch der 10J-Renditen um weitere +25 bps oder ein Ausweiten der HY Credit Spreads über ${
+      title: 'Hauptrisiko',
+      text: `Ein Sprung der Kreditaufschläge über ${
         cs.hyOasBps < 400 ? '400 bps' : '500 bps'
-      } würde Bewertungsmultiplikatoren im Nasdaq 100 spürbar belasten.`,
+      } oder schnell steigende Anleiherenditen würden Tech-Aktien und Krypto direkt belasten.`,
     },
     {
       type: 'trigger',
-      title: 'Wichtige Trigger-Marken für die nächsten Wochen',
-      text: `Beobachte die 4W-Netto-Liquidität (${fmtSigned(
-        nl.delta4wB,
-        0,
-        ' Mrd. USD',
-      )}) sowie den DXY bei ${fmtNum(dxy.quote.price, 2)} Pkt. — ein Liquiditätsrückgang unter -75 Mrd. USD in 4 Wochen wäre ein klares Warnsignal.`,
+      title: 'Worauf achten',
+      text: `Kippt die 4-Wochen-Liquidität unter -75 Mrd. $ oder bricht der DXY klar über ${fmtNum(
+        dxy.sma50 ?? dxy.quote.price + 1.5,
+        2,
+      )}, droht Gegenwind.`,
     },
   ];
 
   const headline = `Makro-Briefing: ${regime.regimeLabel}`;
-  const subheadline = `Net Liquidity ${fmtNum(nl.currentT, 2)} Bio. $ · HY Spread ${cs.hyOasBps} bps · US10Y ${fmtNum(
+  const subheadline = `Liquidität ${nlT} Bio. $ · Spreads ${cs.hyOasBps} bps · US10Y ${fmtNum(
     y10.yieldPercent,
     2,
   )} % · DXY ${fmtNum(dxy.quote.price, 2)}`;
@@ -261,6 +218,37 @@ export function generateMacroProseReport(
   };
 }
 
+function explainMacroConnection(
+  assetClass: AssetClass,
+  macroScore: number,
+  macroRegime: MacroRegimeEvaluation | null,
+): string {
+  if (!macroRegime) {
+    return 'Makro-Daten werden geladen, um den äußeren Rücken- oder Gegenwind einzuordnen.';
+  }
+
+  const classDriver: Record<AssetClass, string> = {
+    precious_metals: 'Edelmetalle hängen stark an Dollar-Richtung, Realzinsen und Geldmengenwachstum',
+    commodities: 'Rohstoffe reagieren sensibel auf Dollarstärke und globale Liquiditätszyklen',
+    crypto: 'Krypto reagiert besonders direkt auf frische Netto-Liquidität und Risikoappetit',
+    bonds: 'Langlaufende Anleihen profitieren von sinkenden Renditen und ruhigen Kreditmärkten',
+    forex: 'Währungspaare spiegeln primär die relative Zins- und Dollar-Dynamik wider',
+    equities: 'Einzelaktien folgen dem Zusammenspiel aus Marktliquidität, Zinsniveau und Kreditvertrauen',
+    etf: 'Dieser Titel folgt dem Zusammenspiel aus Marktliquidität und Zinsniveau',
+    indices: 'Aktienindizes werden von Netto-Liquidität und stabilen Kreditmärkten getragen',
+  };
+
+  const driver = classDriver[assetClass] ?? classDriver.equities;
+
+  if (macroScore >= 15) {
+    return `${driver} — das aktuelle Umfeld liefert spürbaren Rückenwind.`;
+  }
+  if (macroScore <= -15) {
+    return `${driver} — genau von dort kommt derzeit Gegenwind, der Aufwärtsbewegungen bremst.`;
+  }
+  return `${driver} — aktuell wirken diese Faktoren neutral, die Charttechnik gibt den Takt vor.`;
+}
+
 export function generateAssetProseReport(
   assetName: string,
   timeframe: Timeframe,
@@ -272,226 +260,172 @@ export function generateAssetProseReport(
   const price = quote?.price ?? analysis.latestPrice;
   const chgPct = quote?.changePercent ?? 0;
   const tfText = timeframeLabel(timeframe);
-  const { latest, fibonacci, elliott, scores } = analysis;
+  const { latest, fibonacci, elliott, scores, assetClass } = analysis;
 
-  const maRelations: string[] = [];
-  if (latest.ema21 !== null) {
-    maRelations.push(
-      `${price >= latest.ema21 ? 'über' : 'unter'} der EMA 21 (${fmtNum(latest.ema21, decimals)})`,
-    );
+  const techBull = scores.trend >= 15;
+  const techBear = scores.trend <= -15;
+  const macroBull = scores.macro >= 15;
+  const macroBear = scores.macro <= -15;
+
+  // Compact Summary: price + interplay between chart & macro
+  let compactSummary: string;
+  if (techBull && macroBull) {
+    compactSummary = `${assetName} liegt im ${tfText} klar auf Kurs: Charttrend und Makro-Umfeld ziehen am selben Strang. Rücksetzer treffen bisher auf aktive Käufer.`;
+  } else if (techBull && macroBear) {
+    compactSummary = `${assetName} zeigt im ${tfText} zwar Aufwärtsstärke, stößt aber auf Makro-Gegenwind. Steile Bewegungen bleiben daher anfällig für Gewinnmitnahmen.`;
+  } else if (techBear && macroBull) {
+    compactSummary = `${assetName} schwächelt im Chart noch, erhält vom Makro-Umfeld aber bereits Rückenwind. Erste Stabilisierungszeichen verdienen Aufmerksamkeit.`;
+  } else if (techBear && macroBear) {
+    compactSummary = `${assetName} steht unter doppeltem Druck: Sowohl Chartstruktur als auch Makro-Lage bremsen derzeit. Vorsicht geht vor voreiligen Käufen.`;
+  } else {
+    compactSummary = `${assetName} sucht im ${tfText} nach Richtung — Käufer und Verkäufer halten sich die Waage. Erst ein Ausbruch über Schlüsselmarken bringt Klarheit.`;
   }
-  if (latest.sma50 !== null) {
-    maRelations.push(
-      `${price >= latest.sma50 ? 'über' : 'unter'} dem SMA 50 (${fmtNum(latest.sma50, decimals)})`,
-    );
+
+  // 1. Trend & Marktdynamik (meaning over raw parameter dumps)
+  const aboveAllMa =
+    (latest.ema21 === null || price >= latest.ema21) &&
+    (latest.sma50 === null || price >= latest.sma50) &&
+    (latest.sma200 === null || price >= latest.sma200);
+  const belowAllMa =
+    (latest.ema21 === null || price <= latest.ema21) &&
+    (latest.sma50 === null || price <= latest.sma50) &&
+    (latest.sma200 === null || price <= latest.sma200);
+
+  let trendSentence: string;
+  if (aboveAllMa && latest.supertrendDir === 1) {
+    trendSentence = 'Käufer kontrollieren das Bild über allen wichtigen Trendlinien hinweg.';
+  } else if (belowAllMa && latest.supertrendDir === -1) {
+    trendSentence = 'Verkäufer geben den Takt vor; wichtige Durchschnittslinien wirken als Deckel.';
+  } else if (techBull) {
+    trendSentence = 'Der übergeordnete Trend zeigt nach oben, einzelne Durchschnittslinien wurden bereits zurückerobert.';
+  } else if (techBear) {
+    trendSentence = 'Der Abwärtsdruck überwiegt, Erholungen laufen bislang gegen fallende Widerstände.';
+  } else {
+    trendSentence = 'Der Kurs pendelt ohne klaren Sieger zwischen Unterstützung und Widerstand.';
   }
-  if (latest.sma200 !== null) {
-    maRelations.push(
-      `${price >= latest.sma200 ? 'über' : 'unter'} dem SMA 200 (${fmtNum(latest.sma200, decimals)})`,
-    );
+
+  const extras: string[] = [];
+  if (latest.adx !== null && latest.adx < 20) {
+    extras.push('die Trendstärke ist allerdings noch gering (Seitwärtsphase)');
   }
-
-  const adxText =
-    latest.adx !== null
-      ? latest.adx >= 25
-        ? `Der ADX bestätigt mit ${fmtNum(latest.adx, 1)} Punkten eine ausgeprägte Trendphase.`
-        : `Der ADX liegt bei ${fmtNum(latest.adx, 1)} Punkten und deutet auf eine eher trendarme bzw. konsolidierende Marktphase hin.`
-      : '';
-
-  const stText =
-    latest.supertrendDir !== null && latest.supertrendVal !== null
-      ? `Der Supertrend steht auf ${
-          latest.supertrendDir === 1 ? 'Bullisch (Unterstützung' : 'Bärisch (Widerstand'
-        } bei ${fmtNum(latest.supertrendVal, decimals)}).`
-      : '';
-
-  const rsiText =
-    latest.rsi !== null
-      ? `Der RSI (14) notiert bei ${fmtNum(latest.rsi, 1)} (${
-          latest.rsi >= 70
-            ? 'überkaufter Extrembereich — Rücksetzerrisiko beachten'
-            : latest.rsi <= 30
-              ? 'überverkaufter Bereich — Gegenbewegungs-Potenzial'
-              : latest.rsi >= 50
-                ? 'positives Momentum'
-                : 'gedämpftes Momentum'
-        }).`
-      : '';
+  if (latest.rsi !== null && latest.rsi >= 72) {
+    extras.push('kurzfristig heiß gelaufen — kleine Verschnaufpause wäre gesund');
+  } else if (latest.rsi !== null && latest.rsi <= 28) {
+    extras.push('stark überverkauft — Gegenbewegung jederzeit möglich');
+  } else if (latest.macdBullish && scores.momentum > 0) {
+    extras.push('das Momentum unterstützt die Bewegung');
+  } else if (!latest.macdBullish && scores.momentum < 0) {
+    extras.push('die Dynamik lässt spürbar nach');
+  }
 
   const latestDiv = analysis.rsiDivergences[analysis.rsiDivergences.length - 1];
-  const divText = latestDiv
-    ? ` Zudem wurde zuletzt eine ${
-        latestDiv.type === 'bullish' ? 'bullishe' : 'bärische'
-      } RSI-Divergenz registriert.`
-    : '';
+  const divNote = latestDiv
+    ? latestDiv.type === 'bullish'
+      ? ' Eine bullishe Divergenz deutet auf nachlassenden Verkaufsdruck hin.'
+      : ' Eine bärische Divergenz warnt vor schwindender Kaufkraft.'
+    : latest.bollingerSqueeze
+      ? ' Verengte Bänder kündigen zudem einen größeren Ausbruch an.'
+      : '';
 
-  const macdText = `Der MACD liegt ${
-    latest.macdBullish ? 'positiv über seiner Signallinie' : 'negativ unter seiner Signallinie'
-  }${
-    latest.macdHist !== null
-      ? ` (Histogramm ${latest.macdHist >= 0 ? 'positiv' : 'negativ'})`
-      : ''
-  }.`;
+  const dynamicBody = `${trendSentence}${
+    extras.length > 0 ? ` Dabei gilt: ${extras.join(', ')}.` : ''
+  }${divNote}`;
 
-  let fibElliottBody = '';
-  if (fibonacci) {
-    fibElliottBody += `Die Auto-Fibonacci-Analyse über den letzten dominanten ${
-      fibonacci.direction === 'uptrend' ? 'Aufwärts-Swing' : 'Abwärts-Swing'
-    } (${fmtNum(fibonacci.anchorStart.price, decimals)} bis ${fmtNum(
-      fibonacci.anchorEnd.price,
-      decimals,
-    )}) verortet das Golden Pocket (0.618–0.650) zwischen ${fmtNum(
-      fibonacci.goldenPocket.low,
-      decimals,
-    )} und ${fmtNum(fibonacci.goldenPocket.high, decimals)}. Aktuell befindet sich der Kurs: ${
-      fibonacci.pricePositionLabel
-    }.`;
-    if (fibonacci.nearestSupport || fibonacci.nearestResistance) {
-      fibElliottBody += ` Nächste Fib-Unterstützung liegt bei ${
-        fibonacci.nearestSupport ? fmtNum(fibonacci.nearestSupport.price, decimals) : '—'
-      }, nächster Fib-Widerstand bei ${
-        fibonacci.nearestResistance ? fmtNum(fibonacci.nearestResistance.price, decimals) : '—'
-      }.`;
-    }
-  }
-
-  if (elliott.primary) {
-    const ew = elliott.primary;
-    fibElliottBody += ` In der Elliott-Wellen-Auswertung (${ew.degree}) dominiert das Szenario „${
-      ew.status
-    }“ mit ${ew.confidence} % Regelkonformität: Aktive Phase ist ${
-      ew.activeWave
-    }, der Zielkorridor spannt sich von ${fmtNum(ew.targetZone.low, decimals)} bis ${fmtNum(
-      ew.targetZone.high,
-      decimals,
-    )} (Invalidierung bei ${fmtNum(ew.invalidationLevel, decimals)}).`;
-    if (elliott.alternative) {
-      fibElliottBody += ` Als Alternativzählung bleibt „${elliott.alternative.status}“ (${elliott.alternative.confidence} % Konfidenz) aktiv auf dem Radar.`;
-    }
-  } else {
-    fibElliottBody +=
-      ' Für eine eindeutige Elliott-Wellen-Zählung auf diesem Grad fehlen aktuell ausreichend getrennte Swing-Pivots.';
-  }
-
-  const macroBody = macroRegime
-    ? `Aus Makro-Sicht ergibt sich für ${assetName} ein Teilscore von ${fmtSigned(
-        scores.macro,
-        0,
-      )}/100 im Regime „${macroRegime.regimeLabel}“. ${
-        scores.macro >= 15
-          ? 'Geldpolitik, Liquiditätsfluss und/oder Zins-/Dollar-Dynamik liefern derzeit spürbaren Rückenwind.'
-          : scores.macro <= -15
-            ? 'Gegenläufige Makro-Faktoren (Dollarstärke, Renditedruck oder Liquiditätsentzug) bremsen das Aufwärtspotenzial.'
-            : 'Die Makro-Impulse wirken aktuell weitgehend neutral und überlassen der Charttechnik die Führung.'
-      }`
-    : 'Makro-Daten werden geladen, um den Cross-Asset-Rückenwind präzise einzuordnen.';
-
-  const compactSummary = `${assetName} notiert im ${tfText} bei ${fmtNum(price, decimals)} (${fmtSigned(
-    chgPct,
-    2,
-    ' %',
-  )}) und erzielt einen Confluence-Score von ${fmtSigned(scores.confluence, 0)}/100 („${
-    scores.bias
-  }“). ${
-    maRelations.length > 0 ? `Der Kurs handelt ${maRelations.join(', ')}. ` : ''
-  }${
-    elliott.primary
-      ? `Elliott-Fokus: ${elliott.primary.activeWave} (Ziel ${fmtNum(
-          elliott.primary.targetZone.low,
-          decimals,
-        )}–${fmtNum(elliott.primary.targetZone.high, decimals)}, Invalidierung ${fmtNum(
-          elliott.primary.invalidationLevel,
-          decimals,
-        )}).`
-      : ''
-  }`;
-
-  const paragraphs: ProseParagraph[] = [
-    {
-      heading: `1. Trend & Marktstruktur (${tfText})`,
-      body: `Der Kurs notiert ${
-        maRelations.length > 0 ? maRelations.join(' sowie ') : `bei ${fmtNum(price, decimals)}`
-      }. ${stText} ${adxText}${
-        latest.bollingerSqueeze
-          ? ' Zusätzlich zeigen die Bollinger-Bänder einen Volatility Squeeze — eine größere Impulsbewegung steht statistisch bevor.'
-          : ''
-      }`,
-    },
-    {
-      heading: '2. Momentum & Timing-Indikatoren',
-      body: `${rsiText} ${macdText}${divText}`,
-    },
-    {
-      heading: '3. Fibonacci & Elliott-Wellen-Struktur',
-      body: fibElliottBody.trim(),
-    },
-    {
-      heading: '4. Makro-Kontext & relative Einordnung',
-      body: macroBody,
-    },
-  ];
-
-  const bullTargetText = elliott.primary
-    ? `Bestätigung der Struktur (${elliott.primary.activeWave}) eröffnet Potenzial in Richtung ${fmtNum(
-        elliott.primary.targetZone.low,
-        decimals,
-      )}–${fmtNum(elliott.primary.targetZone.high, decimals)}.`
-    : fibonacci?.nearestResistance
-      ? `Ein Ausbruch über ${fmtNum(
-          fibonacci.nearestResistance.price,
-          decimals,
-        )} setzt Aufwärtspotenzial frei.`
-      : 'Anschlusskäufe über den kurzfristigen gleitenden Durchschnitten stärken das Bullenszenario.';
-
+  // 2. Wichtige Marken & Szenario
+  const supportPrice =
+    fibonacci?.nearestSupport?.price ?? latest.ema21 ?? latest.sma50 ?? price * 0.96;
+  const resistancePrice =
+    fibonacci?.nearestResistance?.price ?? elliott.primary?.targetZone.high ?? price * 1.04;
   const invalidationPrice =
     elliott.primary?.invalidationLevel ??
     fibonacci?.nearestSupport?.price ??
     latest.sma50 ??
-    price * 0.97;
+    price * 0.96;
+
+  let zoneSentence = fibonacci?.inGoldenPocket
+    ? `Der Kurs testet aktuell die zentrale Entscheidungszone (${fmtNum(
+        fibonacci.goldenPocket.low,
+        decimals,
+      )}–${fmtNum(fibonacci.goldenPocket.high, decimals)}) — hier zeigt sich oft, ob der Haupttrend hält.`
+    : `Wichtige Unterstützung liegt bei ${fmtNum(
+        supportPrice,
+        decimals,
+      )}, erster Widerstand wartet um ${fmtNum(resistancePrice, decimals)}.`;
+
+  if (elliott.primary) {
+    const ew = elliott.primary;
+    zoneSentence += ` Die Wellenstruktur (${ew.activeWave}) zielt auf ${fmtNum(
+      ew.targetZone.low,
+      decimals,
+    )}–${fmtNum(ew.targetZone.high, decimals)}, solange ${fmtNum(
+      ew.invalidationLevel,
+      decimals,
+    )} nicht bricht.`;
+  }
+
+  // 3. Einfluss des Makro-Umfelds
+  const macroBody = explainMacroConnection(assetClass, scores.macro, macroRegime);
+
+  const paragraphs: ProseParagraph[] = [
+    {
+      heading: '1. Trend & Marktdynamik',
+      body: dynamicBody,
+    },
+    {
+      heading: '2. Wichtige Marken & Szenario',
+      body: zoneSentence,
+    },
+    {
+      heading: '3. Einfluss des Makro-Umfelds',
+      body: macroBody,
+    },
+  ];
+
+  const targetLow = elliott.primary?.targetZone.low ?? resistancePrice;
+  const targetHigh = elliott.primary?.targetZone.high ?? resistancePrice * 1.02;
 
   const conclusions: ProseConclusion[] = [
     {
       type: 'bias',
-      title: `Gesamt-Bias: ${scores.bias} (${fmtSigned(scores.confluence, 0)}/100)`,
-      text: `Trend (${fmtSigned(scores.trend, 0)}) · Momentum (${fmtSigned(
-        scores.momentum,
-        0,
-      )}) · Charttechnik (${fmtSigned(scores.chartTech, 0)}) · Makro (${fmtSigned(scores.macro, 0)}).`,
-    },
-    {
-      type: 'opportunity',
-      title: 'Konstruktives Szenario & Zielbereich',
-      text: bullTargetText,
-    },
-    {
-      type: 'risk',
-      title: 'Invalidierung & Schlüsselunterstützung',
-      text: `Das aktuelle Primärszenario wird technisch kritisch bzw. invalidiert bei Bruch der Marke ${fmtNum(
-        invalidationPrice,
-        decimals,
-      )}${
-        fibonacci
-          ? ` (Golden Pocket Support: ${fmtNum(fibonacci.goldenPocket.low, decimals)}–${fmtNum(
-              fibonacci.goldenPocket.high,
-              decimals,
-            )})`
-          : ''
+      title: `Auf einen Blick: ${scores.bias}`,
+      text: `${
+        techBull ? 'Aufwärtstrend intakt' : techBear ? 'Abwärtsdruck aktiv' : 'Richtungsfindung läuft'
+      }; das Makro-Umfeld wirkt ${
+        macroBull ? 'unterstützend' : macroBear ? 'bremsend' : 'weitgehend neutral'
       }.`,
     },
     {
+      type: 'opportunity',
+      title: 'Chance',
+      text: elliott.primary
+        ? `Hält die Struktur, liegt der nächste Zielbereich zwischen ${fmtNum(
+            targetLow,
+            decimals,
+          )} und ${fmtNum(targetHigh, decimals)}.`
+        : `Ein Ausbruch über ${fmtNum(resistancePrice, decimals)} eröffnet frisches Aufwärtspotenzial.`,
+    },
+    {
+      type: 'risk',
+      title: 'Kipppunkt',
+      text: `Fällt der Kurs nachhaltig unter ${fmtNum(
+        invalidationPrice,
+        decimals,
+      )}, ist das aktuelle Szenario hinfällig.`,
+    },
+    {
       type: 'trigger',
-      title: 'Taktisches Fazit für Anleger',
+      title: 'Fazit',
       text:
         scores.confluence >= 20
-          ? 'Konstruktives Setup: Rücksetzer an EMA 21 oder ins Fibonacci Golden Pocket bieten das beste Chance-Risiko-Verhältnis.'
+          ? 'Rücksetzer an die nächste Unterstützung bieten das sauberste Chance-Risiko-Verhältnis.'
           : scores.confluence <= -20
-            ? 'Defensiv bleiben: Erst ein Rückerobern von EMA 21 / Supertrend-Widerstand würde das Chartbild wieder aufhellen.'
-            : 'Abwartende Positionierung: Ausbruch aus der aktuellen Range bzw. Bestätigung am Golden Pocket abwarten.',
+            ? 'Defensiv bleiben, bis Käufer die kurzfristigen Trendmarken zurückerobern.'
+            : 'Abwarten, bis der Ausbruch aus der aktuellen Spanne Klarheit schafft.',
     },
   ];
 
-  const headline = `${assetName} — Technische & Makro-Analyse`;
-  const subheadline = `Kurs ${fmtNum(price, decimals)} (${fmtSigned(chgPct, 2, ' %')}) · ${tfText}`;
+  const headline = `${assetName} — Marktanalyse`;
+  const subheadline = `${fmtNum(price, decimals)} (${fmtSigned(chgPct, 2, ' %')}) · ${tfText}`;
 
   const markdown = [
     `# ${headline}`,

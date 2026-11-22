@@ -415,8 +415,8 @@ export function runFullAssetAnalysis(
       assetId,
       time: recentFlip.time,
       title:
-        recentFlip.direction === 1 ? 'Supertrend Bullish-Flip' : 'Supertrend Bearish-Flip',
-      detail: `Trendwechsel auf ${timeframe} bei ${recentFlip.value.toFixed(2)}`,
+        recentFlip.direction === 1 ? 'Trend dreht aufwärts' : 'Trend dreht abwärts',
+      detail: `Supertrend wechselt auf ${timeframe} bei ${recentFlip.value.toFixed(2)}`,
       severity: recentFlip.direction === 1 ? 'bullish' : 'bearish',
       source: 'Trend',
     });
@@ -429,7 +429,9 @@ export function runFullAssetAnalysis(
       assetId,
       time: recentCross.time,
       title: recentCross.type === 'golden_cross' ? 'Golden Cross (50/200)' : 'Death Cross (50/200)',
-      detail: `SMA 50 kreuzt SMA 200 bei ${recentCross.price.toFixed(2)}`,
+      detail: `Langfrist-Trend dreht ${
+        recentCross.type === 'golden_cross' ? 'positiv' : 'negativ'
+      } (${recentCross.price.toFixed(2)})`,
       severity: recentCross.type === 'golden_cross' ? 'bullish' : 'bearish',
       source: 'Trend',
     });
@@ -440,8 +442,8 @@ export function runFullAssetAnalysis(
       id: `${assetId}-bbsq-${latestTime}`,
       assetId,
       time: latestTime,
-      title: 'Bollinger Volatility Squeeze',
-      detail: 'Stark verengte Bänder signalisieren bevorstehenden Volatilitätsausbruch.',
+      title: 'Volatilitäts-Stau (Squeeze)',
+      detail: 'Starke Verengung — größere Ausbruchsbewegung bahnt sich an.',
       severity: 'warning',
       source: 'Trend',
     });
@@ -453,7 +455,10 @@ export function runFullAssetAnalysis(
       assetId,
       time: latestDiv.time,
       title: latestDiv.type === 'bullish' ? 'Bullishe RSI-Divergenz' : 'Bärische RSI-Divergenz',
-      detail: latestDiv.description,
+      detail:
+        latestDiv.type === 'bullish'
+          ? 'Verkaufsdruck lässt nach — Gegenbewegung möglich.'
+          : 'Preistrend verliert an Kraft — Rücksetzer möglich.',
       severity: latestDiv.type === 'bullish' ? 'bullish' : 'bearish',
       source: 'Momentum',
     });
@@ -466,8 +471,8 @@ export function runFullAssetAnalysis(
       assetId,
       time: recentMacd.time,
       title:
-        recentMacd.crossover === 'bullish' ? 'MACD Bullish Crossover' : 'MACD Bearish Crossover',
-      detail: `MACD kreuzt Signallinie (${recentMacd.crossover})`,
+        recentMacd.crossover === 'bullish' ? 'Momentum dreht hoch' : 'Momentum dreht runter',
+      detail: `Kurzfristige Dynamik (${recentMacd.crossover === 'bullish' ? 'bullish' : 'bärisch'})`,
       severity: recentMacd.crossover === 'bullish' ? 'bullish' : 'bearish',
       source: 'Momentum',
     });
@@ -478,10 +483,10 @@ export function runFullAssetAnalysis(
       id: `${assetId}-gp-${latestTime}`,
       assetId,
       time: latestTime,
-      title: 'Fibonacci Golden Pocket Test',
-      detail: `Kurs testet 0.618–0.650 Zone (${fibonacci.goldenPocket.low.toFixed(
+      title: 'Golden-Pocket-Entscheidungszone',
+      detail: `Kurs testet Schlüsselbereich ${fibonacci.goldenPocket.low.toFixed(
         2,
-      )}–${fibonacci.goldenPocket.high.toFixed(2)})`,
+      )}–${fibonacci.goldenPocket.high.toFixed(2)}`,
       severity: fibonacci.direction === 'uptrend' ? 'bullish' : 'warning',
       source: 'Fibonacci',
     });
@@ -493,7 +498,7 @@ export function runFullAssetAnalysis(
       assetId,
       time: latestTime,
       title: `Elliott: ${elliott.primary.activeWave}`,
-      detail: `${elliott.primary.status} · Konfidenz ${elliott.primary.confidence}% · Inv. ${elliott.primary.invalidationLevel.toFixed(
+      detail: `${elliott.primary.status} · Kipppunkt ${elliott.primary.invalidationLevel.toFixed(
         2,
       )}`,
       severity: elliott.primary.direction === 'bullish' ? 'bullish' : 'bearish',

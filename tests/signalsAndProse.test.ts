@@ -185,7 +185,11 @@ describe('Signals & German Prose Analysis Engine', () => {
     expect(prose.headline).toContain('Makro-Briefing');
     expect(prose.compactSummary).toContain('5,92');
     expect(prose.compactSummary).toContain('318 bps');
+    expect(prose.compactSummary.length).toBeLessThan(280);
     expect(prose.paragraphs).toHaveLength(3);
+    for (const p of prose.paragraphs) {
+      expect(p.body.length).toBeLessThan(340);
+    }
     expect(prose.conclusions.length).toBeGreaterThanOrEqual(4);
     expect(prose.markdown).toContain('Wichtigste Schlussfolgerungen');
   });
@@ -205,7 +209,7 @@ describe('Signals & German Prose Analysis Engine', () => {
     expect(prose.conclusions[0].text).toContain('Vorsicht');
   });
 
-  it('computes bounded confluence score and detailed German prose for both bullish and bearish assets', () => {
+  it('computes bounded confluence score and concise German prose for both bullish and bearish assets', () => {
     const expMacro = buildExpansionMacro();
     const expRegime = evaluateMacroRegime(expMacro);
     const bullCandles = buildTrendCandles('up', 220);
@@ -242,7 +246,11 @@ describe('Signals & German Prose Analysis Engine', () => {
       expRegime,
     );
     expect(bullReport.headline).toContain('Gold');
-    expect(bullReport.paragraphs).toHaveLength(4);
+    expect(bullReport.compactSummary.length).toBeLessThan(280);
+    expect(bullReport.paragraphs).toHaveLength(3);
+    for (const p of bullReport.paragraphs) {
+      expect(p.body.length).toBeLessThan(340);
+    }
     expect(bullReport.conclusions).toHaveLength(4);
 
     // Bearish asset under stress macro

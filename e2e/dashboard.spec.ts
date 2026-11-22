@@ -172,28 +172,20 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     await expect(proseCard).toBeVisible();
 
     await expect(proseCard.getByText(/Makro-Briefing:/)).toBeVisible();
-    await expect(
-      proseCard.getByText('1. Liquidität & Geldmenge (Fed Net Liquidity & M2)'),
-    ).toBeVisible();
-    await expect(proseCard.getByText('2. Zinsen, US-Dollar & Kreditrisiko')).toBeVisible();
+    await expect(proseCard.getByText('1. Geldfluss & Liquidität')).toBeVisible();
+    await expect(proseCard.getByText('2. Zinsen, Dollar & Risikoappetit')).toBeVisible();
     await expect(proseCard.getByText('Wichtigste Schlussfolgerungen')).toBeVisible();
 
     await proseCard.getByRole('button', { name: 'Kompakt', exact: true }).click();
-    await expect(
-      proseCard.getByText('1. Liquidität & Geldmenge (Fed Net Liquidity & M2)'),
-    ).toBeHidden();
+    await expect(proseCard.getByText('1. Geldfluss & Liquidität')).toBeHidden();
     await expect(proseCard.getByText('Wichtigste Schlussfolgerungen')).toBeVisible();
     await proseCard.getByRole('button', { name: 'Ausführlich', exact: true }).click();
-    await expect(
-      proseCard.getByText('1. Liquidität & Geldmenge (Fed Net Liquidity & M2)'),
-    ).toBeVisible();
+    await expect(proseCard.getByText('1. Geldfluss & Liquidität')).toBeVisible();
 
     await proseCard.getByRole('button', { name: 'Asset-Analyse', exact: true }).click();
     await proseCard.getByRole('button', { name: 'Nasdaq 100', exact: true }).click();
-    await expect(
-      proseCard.getByText(/Nasdaq 100 Index — Technische & Makro-Analyse/),
-    ).toBeVisible();
-    await expect(proseCard.getByText('3. Fibonacci & Elliott-Wellen-Struktur')).toBeVisible();
+    await expect(proseCard.getByText('Nasdaq 100 Index — Marktanalyse')).toBeVisible();
+    await expect(proseCard.getByText('2. Wichtige Marken & Szenario')).toBeVisible();
 
     await proseCard.getByTitle('Im Lesemodus öffnen').click();
     await expect(page.getByTitle('Lesemodus schließen')).toBeVisible();
@@ -203,9 +195,7 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     await expect(matrixCard).toBeVisible();
     await expect(matrixCard.getByText('Aktive Markt-Signale (1D)')).toBeVisible();
     await matrixCard.getByRole('button', { name: /Silber/ }).first().click();
-    await expect(
-      proseCard.getByText(/Silber \(COMEX Futures\) — Technische & Makro-Analyse/),
-    ).toBeVisible();
+    await expect(proseCard.getByText('Silber (COMEX Futures) — Marktanalyse')).toBeVisible();
 
     expect(errors.pageErrors).toEqual([]);
     expect(errors.consoleErrors).toEqual([]);
@@ -283,7 +273,7 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     await expect(chartCard.locator('canvas').first()).toBeVisible();
 
     await proseCard.getByRole('button', { name: 'Asset-Analyse', exact: true }).click();
-    await expect(proseCard.getByText('Bitcoin USD — Technische & Makro-Analyse')).toBeVisible();
+    await expect(proseCard.getByText('Bitcoin USD — Marktanalyse')).toBeVisible();
 
     // 2. Bookmark toggle on Apple (AAPL) -> appears in Bookmarks tab & Master Chart tabs
     await catalogCard.getByRole('button', { name: 'Bookmark Apple' }).click();
