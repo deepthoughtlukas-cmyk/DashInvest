@@ -1,0 +1,6 @@
+name = "dashinvest-api"
+main = "index.ts"
+compatibility_date = "2025-05-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://deepthoughtlukas-cmyk.github.io,http://localhost:5173"

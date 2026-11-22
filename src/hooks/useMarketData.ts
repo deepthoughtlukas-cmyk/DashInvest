@@ -2,14 +2,10 @@ import { useMemo } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { inferAssetClass, resolveCanonicalSymbol } from '../../shared/catalog.ts';
 import type {
-  AssetCandlesResponse,
-  AssetFundamentals,
   Candle,
   CatalogAsset,
   ElliottDegree,
-  MacroOverview,
   QuoteSummary,
-  SymbolSearchResult,
   Timeframe,
 } from '../../shared/types.ts';
 import {
@@ -26,27 +22,18 @@ import {
   type AssetQuickSummary,
   type ProseReport,
 } from '../engine/proseAnalysis.ts';
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try {
-      const errBody = (await res.json()) as { error?: string };
-      if (errBody.error) msg = errBody.error;
-    } catch {
-      // ignore non-json
-    }
-    throw new Error(msg);
-  }
-  return (await res.json()) as T;
-}
+import {
+  fetchAssetCandlesApi,
+  fetchAssetFundamentalsApi,
+  fetchMacroOverviewApi,
+  fetchQuotesApi,
+  fetchSymbolSearchApi,
+} from '../services/apiClient.ts';
 
 export function useQuotesQuery(refetchIntervalMs = 60_000) {
   return useQuery({
     queryKey: ['market', 'quotes'],
-    queryFn: () =>
-      fetchJson<{ quotes: QuoteSummary[]; updatedAt: string }>('/api/market/quotes'),
+    queryFn: () => fetchQuotesApi(),
     refetchInterval: refetchIntervalMs,
     staleTime: 25_000,
   });
@@ -61,10 +48,7 @@ export function useBatchQuotesQuery(symbols: string[], refetchIntervalMs = 60_00
 
   return useQuery({
     queryKey: ['market', 'quotes', 'batch', queryParam],
-    queryFn: () =>
-      fetchJson<{ quotes: QuoteSummary[]; failed?: string[]; updatedAt: string }>(
-        `/api/market/quotes?symbols=${encodeURIComponent(queryParam)}`,
-      ),
+    queryFn: () => fetchQuotesApi(normalized),
     enabled: normalized.length > 0,
     refetchInterval: refetchIntervalMs,
     staleTime: 30_000,
@@ -75,10 +59,7 @@ export function useSymbolSearchQuery(query: string) {
   const trimmed = query.trim();
   return useQuery({
     queryKey: ['market', 'search', trimmed],
-    queryFn: () =>
-      fetchJson<{ query: string; results: SymbolSearchResult[] }>(
-        `/api/market/search?q=${encodeURIComponent(trimmed)}`,
-      ),
+    queryFn: () => fetchSymbolSearchApi(trimmed),
     enabled: trimmed.length >= 2,
     staleTime: 5 * 60_000,
   });
@@ -87,7 +68,7 @@ export function useSymbolSearchQuery(query: string) {
 export function useMacroOverviewQuery(refetchIntervalMs = 120_000) {
   return useQuery({
     queryKey: ['macro', 'overview'],
-    queryFn: () => fetchJson<MacroOverview>('/api/macro/overview'),
+    queryFn: () => fetchMacroOverviewApi(),
     refetchInterval: refetchIntervalMs,
     staleTime: 60_000,
   });
@@ -101,10 +82,7 @@ export function useAssetCandlesQuery(
   const symbol = resolveCanonicalSymbol(symbolOrId);
   return useQuery({
     queryKey: ['market', 'candles', symbol, timeframe],
-    queryFn: () =>
-      fetchJson<AssetCandlesResponse>(
-        `/api/market/candles?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(timeframe)}`,
-      ),
+    queryFn: () => fetchAssetCandlesApi(symbol, timeframe),
     enabled: symbol.length > 0,
     refetchInterval: refetchIntervalMs,
     staleTime: 25_000,
@@ -115,10 +93,7 @@ export function useAssetFundamentalsQuery(symbolOrId: string, enabled = true) {
   const symbol = resolveCanonicalSymbol(symbolOrId);
   return useQuery({
     queryKey: ['market', 'fundamentals', symbol],
-    queryFn: () =>
-      fetchJson<AssetFundamentals>(
-        `/api/market/fundamentals?symbol=${encodeURIComponent(symbol)}`,
-      ),
+    queryFn: () => fetchAssetFundamentalsApi(symbol),
     enabled: enabled && symbol.length > 0,
     staleTime: 10 * 60_000,
     retry: 1,
@@ -164,10 +139,7 @@ export function useDashboardIntelligence(
   const dailyQueries = useQueries({
     queries: dailyTrackedAssets.map((item) => ({
       queryKey: ['market', 'candles', item.symbol, '1d'],
-      queryFn: () =>
-        fetchJson<AssetCandlesResponse>(
-          `/api/market/candles?symbol=${encodeURIComponent(item.symbol)}&tf=1d`,
-        ),
+      queryFn: () => fetchAssetCandlesApi(item.symbol, '1d'),
       refetchInterval: refetchIntervalMs,
       staleTime: 45_000,
     })),

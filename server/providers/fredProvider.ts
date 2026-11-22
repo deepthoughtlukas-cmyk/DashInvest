@@ -135,10 +135,15 @@ export class FredProvider implements MacroDataProvider {
   readonly name = 'FRED St. Louis Fed';
   private cache = new TtlCache();
 
+  constructor(private readonly explicitApiKey?: string) {}
+
   async getSeries(seriesId: string): Promise<MacroPoint[]> {
     const cacheKey = `fred:series:${seriesId}`;
     const { data } = await this.cache.getOrLoad(cacheKey, 15 * 60_000, async () => {
-      const apiKey = process.env.FRED_API_KEY?.trim();
+      const apiKey = (
+        this.explicitApiKey ??
+        (typeof process !== 'undefined' ? process.env?.FRED_API_KEY : undefined)
+      )?.trim();
       if (apiKey) {
         const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${encodeURIComponent(
           seriesId,

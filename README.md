@@ -32,6 +32,12 @@ Frei verschieb- und skalierbare Widgets (`react-grid-layout`) mit 3 Presets (*An
 - **Profil-Anmeldung & Registrierung:** Profile können mit Benutzername, Passwort (`scrypt`-Hash) und `HttpOnly`-Session-Cookie erstellt und gewechselt werden (`/api/auth/*`)
 - **Kontinuierliche Auto-Speicherung:** Jede Änderung an Widgets, Layouts, aktiven Symbolen, Chart-Einstellungen, manuellen Fibonacci-Ankern, Ordnern und Bookmarks wird automatisch per Debounce + `keepalive` auf den Server synchronisiert (`/api/profile/workspace`, lokal persistiert unter `data/`) und bleibt nach Neuladen sowie über Profilwechsel hinweg vollständig pro Benutzer erhalten
 
+### 4. GitHub Pages, Live-Worker & Firebase Google-Login (`DEPLOYMENT.md`)
+- **GitHub Pages (`.github/workflows/deploy-pages.yml`):** Automatisches Deployment bei jedem Push auf `main` inkl. täglichem Snapshot-Fallback (`.github` Schedule)
+- **Live-Kurse via Cloudflare Worker (`worker/index.ts`, `worker/wrangler.toml`):** Kostenloser Edge-Proxy für Yahoo Finance & FRED ohne Kreditkarte
+- **Google-Anmeldung & Cloud-Sync (`src/services/firebase.ts`, `firestore.rules`):** Firebase Auth (Google) + Cloud Firestore synchronisieren Bookmarks, Ordner, Chart-Einstellungen und Dashboard-Layout geräteübergreifend
+- **Vollständige Schritt-für-Schritt-Anleitung:** Siehe [DEPLOYMENT.md](DEPLOYMENT.md)
+
 ---
 
 ## Datenquellen & Konfiguration

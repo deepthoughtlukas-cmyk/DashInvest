@@ -4,12 +4,31 @@ import type {
   PersistedWorkspaceState,
   UserProfileSummary,
 } from '../../shared/types.ts';
+import { browserProfileStore, getApiMode } from '../services/apiClient.ts';
+import {
+  deleteFirestoreUserData,
+  isFirebaseConfigured,
+  loadFirestoreWorkspace,
+  mapFirebaseUser,
+  saveFirestoreWorkspace,
+  signInWithGoogle,
+  signOutFirebase,
+  subscribeFirebaseAuth,
+  updateFirestoreDisplayName,
+} from '../services/firebase.ts';
 import {
   extractWorkspaceSnapshot,
   useDashboardStore,
 } from '../store/dashboardStore.ts';
 
 export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error';
+export type AuthMode = 'firebase' | 'server' | 'browser';
+
+export function resolveAuthMode(): AuthMode {
+  if (isFirebaseConfigured()) return 'firebase';
+  if (getApiMode() === 'live-local') return 'server';
+  return 'browser';
+}
 
 async function apiJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(url, {
@@ -28,6 +47,7 @@ async function apiJson<T>(url: string, init: RequestInit = {}): Promise<T> {
 }
 
 export function useProfileSync() {
+  const authMode = resolveAuthMode();
   const [user, setUser] = useState<UserProfileSummary | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
@@ -48,43 +68,71 @@ export function useProfileSync() {
   };
 
   const refreshProfiles = useCallback(async () => {
+    if (authMode === 'firebase') {
+      setProfilesList([]);
+      return;
+    }
+    if (authMode === 'browser') {
+      setProfilesList(browserProfileStore.listProfiles());
+      return;
+    }
     try {
       const data = await apiJson<{ profiles: UserProfileSummary[] }>('/api/auth/profiles');
       setProfilesList(data.profiles);
     } catch {
       // keep prior list
     }
-  }, []);
+  }, [authMode]);
 
   const persistSnapshotJson = useCallback(
     async (json: string, keepalive = false) => {
-      if (!userRef.current) return;
+      const currentUser = userRef.current;
+      if (!currentUser) return;
+
       try {
-        const res = await fetch('/api/profile/workspace', {
-          method: 'PUT',
-          credentials: 'include',
-          keepalive,
-          headers: { 'Content-Type': 'application/json' },
-          body: json,
-        });
-        if (!res.ok) {
-          const err = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(err.error || `HTTP ${res.status}`);
+        let savedAt: string;
+
+        if (authMode === 'firebase') {
+          const parsed = JSON.parse(json) as PersistedWorkspaceState;
+          const res = await saveFirestoreWorkspace(currentUser.id, parsed, {
+            displayName: currentUser.displayName,
+            email: currentUser.email ?? null,
+            photoURL: currentUser.photoURL ?? null,
+          });
+          savedAt = res.savedAt;
+        } else if (authMode === 'browser') {
+          const parsed = JSON.parse(json) as PersistedWorkspaceState;
+          const res = browserProfileStore.saveWorkspace(currentUser.id, parsed);
+          savedAt = res.savedAt;
+        } else {
+          const res = await fetch('/api/profile/workspace', {
+            method: 'PUT',
+            credentials: 'include',
+            keepalive,
+            headers: { 'Content-Type': 'application/json' },
+            body: json,
+          });
+          if (!res.ok) {
+            const err = (await res.json().catch(() => ({}))) as { error?: string };
+            throw new Error(err.error || `HTTP ${res.status}`);
+          }
+          const payload = (await res.json()) as { savedAt: string };
+          savedAt = payload.savedAt;
         }
-        const payload = (await res.json()) as { savedAt: string };
+
         lastSyncedJsonRef.current = json;
         if (pendingJsonRef.current === json) {
           pendingJsonRef.current = null;
         }
         setSyncStatus('saved');
         setSyncError(null);
-        setLastSavedAt(payload.savedAt);
+        setLastSavedAt(savedAt);
       } catch (err) {
         setSyncStatus('error');
         setSyncError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen');
       }
     },
-    [],
+    [authMode],
   );
 
   const flushNow = useCallback(async () => {
@@ -124,8 +172,71 @@ export function useProfileSync() {
     [],
   );
 
-  // Restore existing cookie session on mount
+  // Restore session on mount according to active auth backend
   useEffect(() => {
+    if (authMode === 'firebase') {
+      let active = true;
+      const unsub = subscribeFirebaseAuth((fbUser) => {
+        if (!active) return;
+        if (!fbUser) {
+          if (userRef.current) {
+            userRef.current = null;
+            lastSyncedJsonRef.current = null;
+            useDashboardStore.getState().resetWorkspaceToDefaults();
+          }
+          setUser(null);
+          setSyncStatus('idle');
+          setLastSavedAt(null);
+          setAuthLoading(false);
+          return;
+        }
+
+        void (async () => {
+          try {
+            const docData = await loadFirestoreWorkspace(fbUser.uid);
+            if (!active) return;
+            const summary = mapFirebaseUser(fbUser, docData.displayName, docData.updatedAt);
+            // If new Google user has no Firestore doc yet, preserve current view and save it to Cloud immediately
+            const isFirstCloudSave = !docData.workspace;
+            activateSession(summary, docData.workspace, isFirstCloudSave);
+            if (isFirstCloudSave) {
+              const snap = extractWorkspaceSnapshot(useDashboardStore.getState());
+              const saved = await saveFirestoreWorkspace(fbUser.uid, snap, {
+                displayName: summary.displayName,
+                email: summary.email ?? null,
+                photoURL: summary.photoURL ?? null,
+              });
+              if (active) setLastSavedAt(saved.savedAt);
+            }
+          } catch (err) {
+            if (!active) return;
+            const fallback = mapFirebaseUser(fbUser);
+            activateSession(fallback, null, true);
+            setSyncStatus('error');
+            setSyncError(err instanceof Error ? err.message : 'Cloud-Abruf fehlgeschlagen');
+          } finally {
+            if (active) setAuthLoading(false);
+          }
+        })();
+      });
+
+      return () => {
+        active = false;
+        unsub();
+      };
+    }
+
+    if (authMode === 'browser') {
+      setProfilesList(browserProfileStore.listProfiles());
+      const active = browserProfileStore.getActiveSession();
+      if (active) {
+        activateSession(active.user, active.workspace, true);
+      }
+      setAuthLoading(false);
+      return;
+    }
+
+    // Local Express session restore
     let cancelled = false;
     (async () => {
       try {
@@ -150,10 +261,11 @@ export function useProfileSync() {
     return () => {
       cancelled = true;
     };
-  }, [activateSession]);
+  }, [authMode, activateSession]);
 
-  // Continuous workspace auto-save subscription + tab-hide / unload keepalive flush
+  // Continuous workspace auto-save subscription + tab-hide / unload flush
   useEffect(() => {
+    const debounceMs = authMode === 'firebase' ? 600 : 500;
     const unsubscribe = useDashboardStore.subscribe((state) => {
       if (!userRef.current) return;
       const json = JSON.stringify(extractWorkspaceSnapshot(state));
@@ -174,7 +286,7 @@ export function useProfileSync() {
         } else {
           setSyncStatus('saved');
         }
-      }, 500);
+      }, debounceMs);
     });
 
     const flushKeepalive = () => {
@@ -182,7 +294,7 @@ export function useProfileSync() {
       const latestJson = JSON.stringify(extractWorkspaceSnapshot(useDashboardStore.getState()));
       if (latestJson !== lastSyncedJsonRef.current) {
         clearPendingTimer();
-        void persistSnapshotJson(latestJson, true);
+        void persistSnapshotJson(latestJson, authMode === 'server');
       }
     };
 
@@ -201,7 +313,14 @@ export function useProfileSync() {
       window.removeEventListener('beforeunload', flushKeepalive);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [persistSnapshotJson]);
+  }, [authMode, persistSnapshotJson]);
+
+  const loginWithGoogle = useCallback(async () => {
+    if (authMode !== 'firebase') {
+      throw new Error('Firebase ist für diese Umgebung nicht konfiguriert.');
+    }
+    await signInWithGoogle();
+  }, [authMode]);
 
   const register = useCallback(
     async (params: {
@@ -214,6 +333,16 @@ export function useProfileSync() {
       const initialWorkspace = params.importCurrentWorkspace
         ? extractWorkspaceSnapshot(useDashboardStore.getState())
         : undefined;
+
+      if (authMode === 'browser') {
+        const res = browserProfileStore.register({
+          ...params,
+          initialWorkspace: initialWorkspace ?? null,
+        });
+        activateSession(res.user, res.workspace, params.importCurrentWorkspace);
+        await refreshProfiles();
+        return;
+      }
 
       const res = await apiJson<AuthSessionResponse>('/api/auth/register', {
         method: 'POST',
@@ -230,12 +359,19 @@ export function useProfileSync() {
         await refreshProfiles();
       }
     },
-    [activateSession, refreshProfiles],
+    [authMode, activateSession, refreshProfiles],
   );
 
   const login = useCallback(
     async (username: string, password: string) => {
       await flushNow();
+      if (authMode === 'browser') {
+        const res = browserProfileStore.login(username, password);
+        activateSession(res.user, res.workspace, false);
+        await refreshProfiles();
+        return;
+      }
+
       const res = await apiJson<AuthSessionResponse>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
@@ -245,7 +381,7 @@ export function useProfileSync() {
         await refreshProfiles();
       }
     },
-    [flushNow, activateSession, refreshProfiles],
+    [authMode, flushNow, activateSession, refreshProfiles],
   );
 
   const logout = useCallback(async () => {
@@ -255,9 +391,15 @@ export function useProfileSync() {
     userRef.current = null;
     lastSyncedJsonRef.current = null;
 
-    await apiJson<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }).catch(() => ({
-      ok: true,
-    }));
+    if (authMode === 'firebase') {
+      await signOutFirebase();
+    } else if (authMode === 'browser') {
+      browserProfileStore.logout();
+    } else {
+      await apiJson<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }).catch(() => ({
+        ok: true,
+      }));
+    }
 
     useDashboardStore.getState().resetWorkspaceToDefaults();
     setUser(null);
@@ -265,10 +407,34 @@ export function useProfileSync() {
     setSyncError(null);
     setLastSavedAt(null);
     await refreshProfiles();
-  }, [flushNow, refreshProfiles]);
+  }, [authMode, flushNow, refreshProfiles]);
 
   const updateProfile = useCallback(
     async (patch: { displayName?: string; avatarColor?: string }) => {
+      const cur = userRef.current;
+      if (!cur) return;
+
+      if (authMode === 'firebase') {
+        const nextName = patch.displayName?.trim();
+        if (nextName) {
+          const { updatedAt } = await updateFirestoreDisplayName(cur.id, nextName);
+          const nextUser = { ...cur, displayName: nextName, updatedAt };
+          userRef.current = nextUser;
+          setUser(nextUser);
+          setLastSavedAt(updatedAt);
+        }
+        return;
+      }
+
+      if (authMode === 'browser') {
+        const updated = browserProfileStore.updateProfile(cur.id, patch);
+        userRef.current = updated;
+        setUser(updated);
+        setLastSavedAt(updated.updatedAt);
+        await refreshProfiles();
+        return;
+      }
+
       const res = await apiJson<{ user: UserProfileSummary }>('/api/profile', {
         method: 'PATCH',
         body: JSON.stringify(patch),
@@ -278,15 +444,25 @@ export function useProfileSync() {
       setLastSavedAt(res.user.updatedAt);
       await refreshProfiles();
     },
-    [refreshProfiles],
+    [authMode, refreshProfiles],
   );
 
   const deleteAccount = useCallback(
     async (password: string) => {
-      await apiJson<{ ok: boolean }>('/api/profile', {
-        method: 'DELETE',
-        body: JSON.stringify({ password }),
-      });
+      const cur = userRef.current;
+      if (!cur) return;
+
+      if (authMode === 'firebase') {
+        await deleteFirestoreUserData(cur.id);
+      } else if (authMode === 'browser') {
+        browserProfileStore.deleteProfile(cur.id, password);
+      } else {
+        await apiJson<{ ok: boolean }>('/api/profile', {
+          method: 'DELETE',
+          body: JSON.stringify({ password }),
+        });
+      }
+
       clearPendingTimer();
       pendingJsonRef.current = null;
       userRef.current = null;
@@ -298,16 +474,18 @@ export function useProfileSync() {
       setLastSavedAt(null);
       await refreshProfiles();
     },
-    [refreshProfiles],
+    [authMode, refreshProfiles],
   );
 
   return {
+    authMode,
     user,
     authLoading,
     syncStatus,
     lastSavedAt,
     syncError,
     profilesList,
+    loginWithGoogle,
     register,
     login,
     logout,

@@ -8,3 +8,5 @@ test-results/
 blob-report/
 coverage/
 data/
+public/static-api/
+.wrangler/

@@ -189,12 +189,20 @@ export const TopBar: React.FC<TopBarProps> = ({
           >
             {profileUser ? (
               <>
-                <span
-                  className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-slate-950"
-                  style={{ backgroundColor: profileUser.avatarColor }}
-                >
-                  {profileUser.displayName.slice(0, 1).toUpperCase()}
-                </span>
+                {profileUser.photoURL ? (
+                  <img
+                    src={profileUser.photoURL}
+                    alt={profileUser.displayName}
+                    className="h-4 w-4 rounded-full object-cover"
+                  />
+                ) : (
+                  <span
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-slate-950"
+                    style={{ backgroundColor: profileUser.avatarColor }}
+                  >
+                    {profileUser.displayName.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
                 <span className="max-w-[110px] truncate font-semibold">
                   {profileUser.displayName}
                 </span>

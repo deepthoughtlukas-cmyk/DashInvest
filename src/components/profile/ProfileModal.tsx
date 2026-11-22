@@ -11,18 +11,20 @@ import {
   X,
 } from 'lucide-react';
 import type { UserProfileSummary } from '../../../shared/types.ts';
-import type { SyncStatus } from '../../hooks/useProfileSync.ts';
+import type { AuthMode, SyncStatus } from '../../hooks/useProfileSync.ts';
 import { useDashboardStore } from '../../store/dashboardStore.ts';
 
 interface ProfileModalProps {
   open: boolean;
   onClose: () => void;
+  authMode: AuthMode;
   user: UserProfileSummary | null;
   syncStatus: SyncStatus;
   lastSavedAt: string | null;
   syncError: string | null;
   profilesList: UserProfileSummary[];
   onRefreshProfiles: () => Promise<void>;
+  onLoginWithGoogle: () => Promise<void>;
   onRegister: (params: {
     username: string;
     displayName?: string;
@@ -56,12 +58,14 @@ function getInitials(name: string): string {
 export const ProfileModal: React.FC<ProfileModalProps> = ({
   open,
   onClose,
+  authMode,
   user,
   syncStatus,
   lastSavedAt,
   syncError,
   profilesList,
   onRefreshProfiles,
+  onLoginWithGoogle,
   onRegister,
   onLogin,
   onLogout,
@@ -168,11 +172,23 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     setErrorMsg(null);
     setBusy(true);
     try {
-      await onDeleteAccount(deletePassword);
+      await onDeleteAccount(authMode === 'firebase' ? '' : deletePassword);
       setDeletePassword('');
       setShowDeleteZone(false);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Löschen fehlgeschlagen');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setErrorMsg(null);
+    setBusy(true);
+    try {
+      await onLoginWithGoogle();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Google-Anmeldung fehlgeschlagen');
     } finally {
       setBusy(false);
     }
@@ -230,7 +246,52 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
           {!user ? (
             /* Guest Auth View */
+            authMode === 'firebase' ? (
+              <div className="space-y-3">
+                <p className="text-xs leading-relaxed text-slate-300">
+                  Melde dich mit deinem Google-Konto an. Deine Bookmarks, Ordnerstruktur,
+                  Chart-Einstellungen und Dashboard-Ansichten werden automatisch über Firebase
+                  Cloud Firestore gespeichert und geräteübergreifend synchronisiert.
+                </p>
+
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleGoogleLogin()}
+                  className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-white px-4 py-2.5 text-xs font-semibold text-slate-900 shadow transition hover:bg-slate-100 disabled:opacity-60"
+                >
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-slate-700" />
+                  ) : (
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="#4285F4"
+                        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 24c3.3 0 6.08-1.09 8.11-2.96l-3.88-3.05c-1.08.72-2.46 1.15-4.23 1.15-3.25 0-6.01-2.2-6.99-5.16H1.01v3.14C3.03 21.13 7.19 24 12 24Z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.01 13.98c-.25-.72-.39-1.49-.39-2.28s.14-1.56.39-2.28V6.28H1.01C.37 7.55 0 8.99 0 11.7c0 2.71.37 4.15 1.01 5.42l4-3.14Z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 4.56c1.8 0 3.41.62 4.68 1.84l3.51-3.51C18.07.99 15.3 0 12 0 7.19 0 3.03 2.87 1.01 6.28l4 3.14c.98-2.96 3.74-4.86 6.99-4.86Z"
+                      />
+                    </svg>
+                  )}
+                  Mit Google anmelden
+                </button>
+              </div>
+            ) : (
             <>
+              {authMode === 'browser' && (
+                <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-200">
+                  Lokaler Browser-Profilspeicher aktiv (ohne Cloud-Sync bis Firebase konfiguriert ist).
+                </div>
+              )}
               <div className="flex rounded-lg border border-slate-800 bg-slate-900/70 p-0.5">
                 <button
                   type="button"
@@ -419,20 +480,31 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 </form>
               )}
             </>
+            )
           ) : (
             /* Logged-In Profile View */
             <>
               <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                 <div className="flex items-center gap-2.5">
-                  <div
-                    className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-slate-950"
-                    style={{ backgroundColor: user.avatarColor }}
-                  >
-                    {getInitials(user.displayName)}
-                  </div>
+                  {user.photoURL ? (
+                    <img
+                      src={user.photoURL}
+                      alt={user.displayName}
+                      className="h-10 w-10 rounded-full border border-slate-700 object-cover"
+                    />
+                  ) : (
+                    <div
+                      className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-slate-950"
+                      style={{ backgroundColor: user.avatarColor }}
+                    >
+                      {getInitials(user.displayName)}
+                    </div>
+                  )}
                   <div>
                     <div className="text-sm font-semibold text-slate-100">{user.displayName}</div>
-                    <div className="text-[11px] text-slate-400">@{user.username}</div>
+                    <div className="text-[11px] text-slate-400">
+                      {user.email ? user.email : `@${user.username}`}
+                    </div>
                   </div>
                 </div>
 
@@ -530,17 +602,21 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 ) : (
                   <form onSubmit={handleDeleteSubmit} className="space-y-2 rounded-lg border border-rose-500/35 bg-rose-950/30 p-2.5">
                     <div className="text-[11px] font-medium text-rose-200">
-                      Profil und alle gespeicherten Daten unwiderruflich löschen:
+                      {authMode === 'firebase'
+                        ? 'Gespeicherte Cloud-Ansicht in Firestore löschen und abmelden:'
+                        : 'Profil und alle gespeicherten Daten unwiderruflich löschen:'}
                     </div>
                     <div className="flex gap-2">
-                      <input
-                        type="password"
-                        required
-                        value={deletePassword}
-                        onChange={(e) => setDeletePassword(e.target.value)}
-                        placeholder="Passwort bestätigen"
-                        className="min-w-0 flex-1 rounded border border-rose-500/40 bg-slate-950 px-2.5 py-1 text-xs text-slate-100 outline-none"
-                      />
+                      {authMode !== 'firebase' && (
+                        <input
+                          type="password"
+                          required
+                          value={deletePassword}
+                          onChange={(e) => setDeletePassword(e.target.value)}
+                          placeholder="Passwort bestätigen"
+                          className="min-w-0 flex-1 rounded border border-rose-500/40 bg-slate-950 px-2.5 py-1 text-xs text-slate-100 outline-none"
+                        />
+                      )}
                       <button
                         type="submit"
                         disabled={busy}

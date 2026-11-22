@@ -122,12 +122,14 @@ const DashboardWorkspace: React.FC = () => {
       <ProfileModal
         open={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
+        authMode={profileSync.authMode}
         user={profileSync.user}
         syncStatus={profileSync.syncStatus}
         lastSavedAt={profileSync.lastSavedAt}
         syncError={profileSync.syncError}
         profilesList={profileSync.profilesList}
         onRefreshProfiles={profileSync.refreshProfiles}
+        onLoginWithGoogle={profileSync.loginWithGoogle}
         onRegister={profileSync.register}
         onLogin={profileSync.login}
         onLogout={profileSync.logout}

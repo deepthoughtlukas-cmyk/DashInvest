@@ -19,6 +19,9 @@ export interface UserProfileSummary {
   username: string;
   displayName: string;
   avatarColor: string;
+  email?: string | null;
+  photoURL?: string | null;
+  provider?: 'local' | 'google' | 'browser';
   createdAt: string;
   updatedAt: string;
 }
