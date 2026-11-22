@@ -24,6 +24,7 @@ Frei verschieb- und skalierbare Widgets (`react-grid-layout`) mit 3 Presets (*An
 - **10J US-Anleiherenditen (`^TNX` / `DGS10`):** Live-Rendite, bps-Veränderung und `2s10s`-Spread (`T10Y2Y`)
 - **Credit Spreads (`BAMLH0A0HYM2`):** US High-Yield OAS in `bps`, 5-Jahres-Perzentil & Risk-On/Neutral/Stress-Ampel
 - **Confluence-Matrix & Signal-Feed:** Gewichteter Gesamtscore (`-100` bis `+100`) und aktive Chart-/Makrosignale
+- **Bookmark-Signale (7 Tage):** Eigenständiges Widget mit allen ausgelösten Trend-, Momentum- und Fibonacci-Signalen der letzten 7 Tage für sämtliche gesetzten Bookmarks inkl. Richtungs-/Asset-Filter und Klick-Fokus in den Master-Chart
 - **Markt- & Makro-Briefing (Prosa):** Automatisch generierte deutsche Profi-Analyse inkl. *Wichtigste Schlussfolgerungen*, *Kompakt/Ausführlich*-Modus, Markdown-Export und Vollbild-Lesemodus
 
 ---

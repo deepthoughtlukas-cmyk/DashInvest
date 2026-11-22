@@ -12,6 +12,7 @@ describe('Dashboard Zustand Store & Presets', () => {
         'master-chart',
         'prose-briefing',
         'signal-matrix',
+        'bookmark-signals-7d',
         'macro-liquidity',
         'macro-credit',
         'macro-dxy',
@@ -28,7 +29,8 @@ describe('Dashboard Zustand Store & Presets', () => {
 
   it('switches presets cleanly across analyse-fokus, multi-chart, and makro-cockpit', () => {
     const store = useDashboardStore.getState();
-    expect(store.activeWidgets).toHaveLength(9);
+    expect(store.activeWidgets).toHaveLength(10);
+    expect(store.activeWidgets).toContain('bookmark-signals-7d');
 
     store.applyPreset('multi-chart');
     const afterMulti = useDashboardStore.getState();
@@ -54,6 +56,11 @@ describe('Dashboard Zustand Store & Presets', () => {
 
     store.removeWidget('macro-m2');
     expect(useDashboardStore.getState().activeWidgets).not.toContain('macro-m2');
+
+    store.toggleWidget('bookmark-signals-7d');
+    expect(useDashboardStore.getState().activeWidgets).not.toContain('bookmark-signals-7d');
+    store.toggleWidget('bookmark-signals-7d');
+    expect(useDashboardStore.getState().activeWidgets).toContain('bookmark-signals-7d');
 
     store.resetCurrentPreset();
     expect(useDashboardStore.getState().activeWidgets).toContain('macro-m2');

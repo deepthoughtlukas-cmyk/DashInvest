@@ -6,6 +6,7 @@ import {
 import type {
   AssetClass,
   Candle,
+  CatalogAsset,
   ElliottDegree,
   MacroOverview,
   Timeframe,
@@ -62,6 +63,12 @@ export interface SignalEvent {
   source: 'Trend' | 'Momentum' | 'Fibonacci' | 'Elliott' | 'Makro';
 }
 
+export interface BookmarkedSignalEvent extends SignalEvent {
+  symbol: string;
+  shortName: string;
+  decimals: number;
+}
+
 export interface FullAssetAnalysis {
   assetId: string;
   symbol: string;
@@ -110,6 +117,13 @@ export interface FullAssetAnalysis {
 
 function clampScore(v: number): number {
   return Math.max(-100, Math.min(100, Math.round(v)));
+}
+
+function fmtPrice(value: number, decimals = 2): string {
+  return new Intl.NumberFormat('de-DE', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value);
 }
 
 export function evaluateMacroRegime(macro: MacroOverview): MacroRegimeEvaluation {
@@ -551,4 +565,289 @@ export function runFullAssetAnalysis(
     },
     signals,
   };
+}
+
+/**
+ * Extracts all discrete technical signals triggered within the last `windowDays` calendar days
+ * for a single asset, using concise plain-German explanations focused on market meaning.
+ */
+export function extractTriggeredSignalsInWindow(
+  asset: Pick<CatalogAsset, 'symbol' | 'shortName' | 'decimals'>,
+  candles: Candle[],
+  analysis: FullAssetAnalysis,
+  windowDays = 7,
+  nowSec?: number,
+): BookmarkedSignalEvent[] {
+  if (candles.length === 0) return [];
+
+  const referenceSec = nowSec ?? Math.floor(Date.now() / 1000);
+  const cutoffSec = referenceSec - windowDays * 86_400;
+  const results = new Map<string, BookmarkedSignalEvent>();
+
+  const pushUnique = (event: Omit<BookmarkedSignalEvent, 'assetId' | 'symbol' | 'shortName' | 'decimals'>) => {
+    if (results.has(event.id)) return;
+    results.set(event.id, {
+      ...event,
+      assetId: asset.symbol,
+      symbol: asset.symbol,
+      shortName: asset.shortName,
+      decimals: asset.decimals,
+    });
+  };
+
+  // 1. Supertrend flips
+  for (const st of analysis.supertrend) {
+    if (!st.flipped || st.time < cutoffSec) continue;
+    pushUnique({
+      id: `${asset.symbol}-st-${st.time}`,
+      time: st.time,
+      title: st.direction === 1 ? 'Trend dreht aufwärts' : 'Trend dreht abwärts',
+      detail:
+        st.direction === 1
+          ? `Kaufsignal: Trendunterstützung jetzt bei ${fmtPrice(st.value, asset.decimals)}.`
+          : `Warnsignal: Trend kippt unter ${fmtPrice(st.value, asset.decimals)}.`,
+      severity: st.direction === 1 ? 'bullish' : 'bearish',
+      source: 'Trend',
+    });
+  }
+
+  // 2. Golden / Death Cross (SMA 50 / SMA 200)
+  for (const cross of analysis.maCrosses) {
+    if (cross.time < cutoffSec) continue;
+    pushUnique({
+      id: `${asset.symbol}-ma50200-${cross.time}`,
+      time: cross.time,
+      title:
+        cross.type === 'golden_cross' ? 'Golden Cross (50/200)' : 'Death Cross (50/200)',
+      detail:
+        cross.type === 'golden_cross'
+          ? `Starker Langfrist-Impuls bei ${fmtPrice(cross.price, asset.decimals)}.`
+          : `Langfristiger Gegenwind ab ${fmtPrice(cross.price, asset.decimals)}.`,
+      severity: cross.type === 'golden_cross' ? 'bullish' : 'bearish',
+      source: 'Trend',
+    });
+  }
+
+  // 3. Medium-term EMA 21 / SMA 50 crosses
+  for (const cross of detectMACrosses(analysis.ema21, analysis.sma50)) {
+    if (cross.time < cutoffSec) continue;
+    pushUnique({
+      id: `${asset.symbol}-ema21sma50-${cross.time}`,
+      time: cross.time,
+      title:
+        cross.type === 'golden_cross'
+          ? 'Mittelfrist-Trend dreht hoch'
+          : 'Mittelfrist-Trend dreht runter',
+      detail:
+        cross.type === 'golden_cross'
+          ? 'EMA 21 steigt über die 50-Tage-Linie — Rückenwind nimmt zu.'
+          : 'EMA 21 fällt unter die 50-Tage-Linie — Schwächephase.',
+      severity: cross.type === 'golden_cross' ? 'bullish' : 'bearish',
+      source: 'Trend',
+    });
+  }
+
+  // 4. Price crossovers vs. SMA 200 and SMA 50
+  const sma200Map = new Map(analysis.sma200.map((p) => [p.time, p.value]));
+  const sma50Map = new Map(analysis.sma50.map((p) => [p.time, p.value]));
+
+  for (let i = 1; i < candles.length; i++) {
+    const prev = candles[i - 1];
+    const curr = candles[i];
+    if (curr.time < cutoffSec) continue;
+
+    const prev200 = sma200Map.get(prev.time);
+    const curr200 = sma200Map.get(curr.time);
+    if (prev200 !== undefined && curr200 !== undefined) {
+      if (prev.close <= prev200 && curr.close > curr200) {
+        pushUnique({
+          id: `${asset.symbol}-pxsma200-up-${curr.time}`,
+          time: curr.time,
+          title: 'Ausbruch über 200-Tage-Linie',
+          detail: `Langfrist-Trend zurückerobert (${fmtPrice(curr.close, asset.decimals)} > ${fmtPrice(curr200, asset.decimals)}).`,
+          severity: 'bullish',
+          source: 'Trend',
+        });
+      } else if (prev.close >= prev200 && curr.close < curr200) {
+        pushUnique({
+          id: `${asset.symbol}-pxsma200-dn-${curr.time}`,
+          time: curr.time,
+          title: 'Rückfall unter 200-Tage-Linie',
+          detail: `Langfristige Stütze gebrochen (${fmtPrice(curr.close, asset.decimals)} < ${fmtPrice(curr200, asset.decimals)}).`,
+          severity: 'bearish',
+          source: 'Trend',
+        });
+      }
+    }
+
+    const prev50 = sma50Map.get(prev.time);
+    const curr50 = sma50Map.get(curr.time);
+    if (prev50 !== undefined && curr50 !== undefined) {
+      if (prev.close <= prev50 && curr.close > curr50) {
+        pushUnique({
+          id: `${asset.symbol}-pxsma50-up-${curr.time}`,
+          time: curr.time,
+          title: 'Sprung über 50-Tage-Linie',
+          detail: `Käufer übernehmen wieder die Führung (${fmtPrice(curr.close, asset.decimals)}).`,
+          severity: 'bullish',
+          source: 'Trend',
+        });
+      } else if (prev.close >= prev50 && curr.close < curr50) {
+        pushUnique({
+          id: `${asset.symbol}-pxsma50-dn-${curr.time}`,
+          time: curr.time,
+          title: 'Bruch unter 50-Tage-Linie',
+          detail: `Mittelfristige Unterstützung verloren (${fmtPrice(curr.close, asset.decimals)}).`,
+          severity: 'bearish',
+          source: 'Trend',
+        });
+      }
+    }
+  }
+
+  // 5. MACD crossovers
+  for (const m of analysis.macd) {
+    if (!m.crossover || m.time < cutoffSec) continue;
+    pushUnique({
+      id: `${asset.symbol}-macd-${m.time}`,
+      time: m.time,
+      title: m.crossover === 'bullish' ? 'Momentum dreht hoch' : 'Momentum dreht runter',
+      detail:
+        m.crossover === 'bullish'
+          ? 'Aufwärtsdynamik zieht im Tageschart wieder an.'
+          : 'Schwung lässt nach — Risiko für Rücksetzer steigt.',
+      severity: m.crossover === 'bullish' ? 'bullish' : 'bearish',
+      source: 'Momentum',
+    });
+  }
+
+  // 6. RSI Divergences
+  for (const div of analysis.rsiDivergences) {
+    if (div.time < cutoffSec) continue;
+    pushUnique({
+      id: `${asset.symbol}-rsidiv-${div.time}`,
+      time: div.time,
+      title: div.type === 'bullish' ? 'Bullishe RSI-Divergenz' : 'Bärische RSI-Divergenz',
+      detail:
+        div.type === 'bullish'
+          ? 'Verkaufsdruck lässt spürbar nach — Bodenbildung möglich.'
+          : 'Anstieg verliert an Kraft — Rückschlaggefahr.',
+      severity: div.type === 'bullish' ? 'bullish' : 'bearish',
+      source: 'Momentum',
+    });
+  }
+
+  // 7. RSI extreme zone entries (overbought >= 70, oversold <= 30)
+  for (let i = 1; i < analysis.rsi.length; i++) {
+    const prev = analysis.rsi[i - 1];
+    const curr = analysis.rsi[i];
+    if (curr.time < cutoffSec) continue;
+
+    if (prev.value < 70 && curr.value >= 70) {
+      pushUnique({
+        id: `${asset.symbol}-rsiob-${curr.time}`,
+        time: curr.time,
+        title: 'Überkauft-Zone erreicht',
+        detail: `Starke Rallye (RSI ${Math.round(curr.value)}) — Gewinnmitnahmen werden wahrscheinlicher.`,
+        severity: 'warning',
+        source: 'Momentum',
+      });
+    } else if (prev.value > 30 && curr.value <= 30) {
+      pushUnique({
+        id: `${asset.symbol}-rsios-${curr.time}`,
+        time: curr.time,
+        title: 'Überverkauft-Zone erreicht',
+        detail: `Ausverkauf weit fortgeschritten (RSI ${Math.round(curr.value)}) — Gegenreaktion möglich.`,
+        severity: 'bullish',
+        source: 'Momentum',
+      });
+    }
+  }
+
+  // 8. Bollinger Squeeze (newest onset in window, or active squeeze on latest bar in window)
+  let squeezePoint: BollingerPoint | null = null;
+  for (let i = 1; i < analysis.bollinger.length; i++) {
+    const prev = analysis.bollinger[i - 1];
+    const curr = analysis.bollinger[i];
+    if (!prev.isSqueeze && curr.isSqueeze && curr.time >= cutoffSec) {
+      squeezePoint = curr;
+    }
+  }
+  if (!squeezePoint) {
+    const lastBb = analysis.bollinger[analysis.bollinger.length - 1];
+    if (lastBb?.isSqueeze && lastBb.time >= cutoffSec) {
+      squeezePoint = lastBb;
+    }
+  }
+  if (squeezePoint) {
+    pushUnique({
+      id: `${asset.symbol}-bbsq-${squeezePoint.time}`,
+      time: squeezePoint.time,
+      title: 'Volatilitäts-Stau (Squeeze)',
+      detail: 'Handelsspanne stark verengt — ein größerer Ausbruch steht bevor.',
+      severity: 'warning',
+      source: 'Trend',
+    });
+  }
+
+  // 9. Fibonacci Golden Pocket test within window
+  if (analysis.fibonacci) {
+    const { low, high } = analysis.fibonacci.goldenPocket;
+    let gpTime: number | null = null;
+    for (let i = candles.length - 1; i >= 0; i--) {
+      const c = candles[i];
+      if (c.time < cutoffSec) break;
+      if (c.low <= high && c.high >= low) {
+        gpTime = c.time;
+        break;
+      }
+    }
+    const latestCandle = candles[candles.length - 1];
+    if (gpTime === null && analysis.fibonacci.inGoldenPocket && latestCandle.time >= cutoffSec) {
+      gpTime = latestCandle.time;
+    }
+    if (gpTime !== null) {
+      const zone = `${fmtPrice(low, asset.decimals)}–${fmtPrice(high, asset.decimals)}`;
+      pushUnique({
+        id: `${asset.symbol}-gp-${gpTime}`,
+        time: gpTime,
+        title: 'Golden-Pocket-Test',
+        detail:
+          analysis.fibonacci.direction === 'uptrend'
+            ? `Kurs testet Schlüssel-Rücksetzer (${zone}).`
+            : `Kurs erreicht Abwärts-Widerstand (${zone}).`,
+        severity: analysis.fibonacci.direction === 'uptrend' ? 'bullish' : 'warning',
+        source: 'Fibonacci',
+      });
+    }
+  }
+
+  return Array.from(results.values()).sort((a, b) => b.time - a.time);
+}
+
+/**
+ * Collects and sorts all triggered signals within `windowDays` across ALL bookmarked assets.
+ */
+export function collectBookmarkedSignals(
+  bookmarkedAssets: Array<Pick<CatalogAsset, 'symbol' | 'shortName' | 'decimals'>>,
+  candlesBySymbol: Record<string, Candle[]>,
+  analysesBySymbol: Record<string, FullAssetAnalysis>,
+  windowDays = 7,
+  nowSec?: number,
+): BookmarkedSignalEvent[] {
+  const all: BookmarkedSignalEvent[] = [];
+
+  for (const asset of bookmarkedAssets) {
+    const candles = candlesBySymbol[asset.symbol];
+    const analysis = analysesBySymbol[asset.symbol];
+    if (!candles || candles.length === 0 || !analysis) continue;
+    all.push(...extractTriggeredSignalsInWindow(asset, candles, analysis, windowDays, nowSec));
+  }
+
+  return all.sort((a, b) => {
+    if (b.time !== a.time) return b.time - a.time;
+    const nameCmp = a.shortName.localeCompare(b.shortName, 'de');
+    if (nameCmp !== 0) return nameCmp;
+    return a.id.localeCompare(b.id);
+  });
 }

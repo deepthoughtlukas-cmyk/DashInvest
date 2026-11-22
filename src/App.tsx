@@ -35,6 +35,9 @@ const DashboardWorkspace: React.FC = () => {
     quoteMap,
     macroRegime,
     focusAssets,
+    bookmarkedAssets,
+    bookmarkedSignals7d,
+    bookmarkedSignalsLoading,
     dailyAnalyses,
     macroProseReport,
     assetProseReport,
@@ -69,6 +72,9 @@ const DashboardWorkspace: React.FC = () => {
           macroLoading={macroQuery.isLoading}
           quoteMap={quoteMap}
           focusAssets={focusAssets}
+          bookmarkedAssets={bookmarkedAssets}
+          bookmarkedSignals7d={bookmarkedSignals7d}
+          bookmarkedSignalsLoading={bookmarkedSignalsLoading}
           dailyAnalyses={dailyAnalyses}
           macroRegime={macroRegime}
           macroProseReport={macroProseReport}

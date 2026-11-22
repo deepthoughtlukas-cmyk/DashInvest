@@ -49,6 +49,7 @@ export type WidgetId =
   | 'master-chart'
   | 'prose-briefing'
   | 'signal-matrix'
+  | 'bookmark-signals-7d'
   | 'macro-liquidity'
   | 'macro-credit'
   | 'macro-dxy'
@@ -65,6 +66,7 @@ const PRESET_WIDGETS: Record<PresetId, WidgetId[]> = {
     'master-chart',
     'prose-briefing',
     'signal-matrix',
+    'bookmark-signals-7d',
     'macro-liquidity',
     'macro-credit',
     'macro-dxy',
@@ -183,33 +185,36 @@ export function getPresetLayouts(preset: PresetId): ResponsiveLayouts {
       { i: 'master-chart', x: 3, y: 0, w: 9, h: 11, minW: 5, minH: 7 },
       { i: 'prose-briefing', x: 0, y: 11, w: 7, h: 8, minW: 4, minH: 6 },
       { i: 'signal-matrix', x: 7, y: 11, w: 5, h: 8, minW: 3, minH: 5 },
-      { i: 'macro-liquidity', x: 0, y: 19, w: 4, h: 6, minW: 3, minH: 5 },
-      { i: 'macro-credit', x: 4, y: 19, w: 4, h: 6, minW: 3, minH: 5 },
-      { i: 'macro-dxy', x: 8, y: 19, w: 4, h: 6, minW: 3, minH: 4 },
-      { i: 'macro-m2', x: 0, y: 25, w: 6, h: 5, minW: 3, minH: 4 },
-      { i: 'macro-us10y', x: 6, y: 25, w: 6, h: 5, minW: 3, minH: 4 },
+      { i: 'bookmark-signals-7d', x: 0, y: 19, w: 12, h: 7, minW: 4, minH: 5 },
+      { i: 'macro-liquidity', x: 0, y: 26, w: 4, h: 6, minW: 3, minH: 5 },
+      { i: 'macro-credit', x: 4, y: 26, w: 4, h: 6, minW: 3, minH: 5 },
+      { i: 'macro-dxy', x: 8, y: 26, w: 4, h: 6, minW: 3, minH: 4 },
+      { i: 'macro-m2', x: 0, y: 32, w: 6, h: 5, minW: 3, minH: 4 },
+      { i: 'macro-us10y', x: 6, y: 32, w: 6, h: 5, minW: 3, minH: 4 },
     ],
     md: [
       { i: 'catalog-explorer', x: 0, y: 0, w: 3, h: 11, minW: 2, minH: 6 },
       { i: 'master-chart', x: 3, y: 0, w: 7, h: 11, minW: 4, minH: 7 },
       { i: 'prose-briefing', x: 0, y: 11, w: 6, h: 8, minW: 4, minH: 6 },
       { i: 'signal-matrix', x: 6, y: 11, w: 4, h: 8, minW: 3, minH: 5 },
-      { i: 'macro-liquidity', x: 0, y: 19, w: 5, h: 6, minW: 3, minH: 5 },
-      { i: 'macro-credit', x: 5, y: 19, w: 5, h: 6, minW: 3, minH: 5 },
-      { i: 'macro-dxy', x: 0, y: 25, w: 4, h: 5, minW: 3, minH: 4 },
-      { i: 'macro-m2', x: 4, y: 25, w: 3, h: 5, minW: 3, minH: 4 },
-      { i: 'macro-us10y', x: 7, y: 25, w: 3, h: 5, minW: 3, minH: 4 },
+      { i: 'bookmark-signals-7d', x: 0, y: 19, w: 10, h: 7, minW: 4, minH: 5 },
+      { i: 'macro-liquidity', x: 0, y: 26, w: 5, h: 6, minW: 3, minH: 5 },
+      { i: 'macro-credit', x: 5, y: 26, w: 5, h: 6, minW: 3, minH: 5 },
+      { i: 'macro-dxy', x: 0, y: 32, w: 4, h: 5, minW: 3, minH: 4 },
+      { i: 'macro-m2', x: 4, y: 32, w: 3, h: 5, minW: 3, minH: 4 },
+      { i: 'macro-us10y', x: 7, y: 32, w: 3, h: 5, minW: 3, minH: 4 },
     ],
     sm: [
       { i: 'catalog-explorer', x: 0, y: 0, w: 6, h: 7, minW: 3, minH: 5 },
       { i: 'master-chart', x: 0, y: 7, w: 6, h: 10, minW: 3, minH: 7 },
       { i: 'prose-briefing', x: 0, y: 17, w: 6, h: 9, minW: 3, minH: 6 },
       { i: 'signal-matrix', x: 0, y: 26, w: 6, h: 6, minW: 3, minH: 5 },
-      { i: 'macro-liquidity', x: 0, y: 32, w: 6, h: 6, minW: 3, minH: 5 },
-      { i: 'macro-credit', x: 0, y: 38, w: 6, h: 6, minW: 3, minH: 5 },
-      { i: 'macro-dxy', x: 0, y: 44, w: 6, h: 5, minW: 3, minH: 4 },
-      { i: 'macro-m2', x: 0, y: 49, w: 6, h: 5, minW: 3, minH: 4 },
-      { i: 'macro-us10y', x: 0, y: 54, w: 6, h: 5, minW: 3, minH: 4 },
+      { i: 'bookmark-signals-7d', x: 0, y: 32, w: 6, h: 7, minW: 3, minH: 5 },
+      { i: 'macro-liquidity', x: 0, y: 39, w: 6, h: 6, minW: 3, minH: 5 },
+      { i: 'macro-credit', x: 0, y: 45, w: 6, h: 6, minW: 3, minH: 5 },
+      { i: 'macro-dxy', x: 0, y: 51, w: 6, h: 5, minW: 3, minH: 4 },
+      { i: 'macro-m2', x: 0, y: 56, w: 6, h: 5, minW: 3, minH: 4 },
+      { i: 'macro-us10y', x: 0, y: 61, w: 6, h: 5, minW: 3, minH: 4 },
     ],
   };
 }
@@ -316,11 +321,15 @@ export const useDashboardStore = create<DashboardState>()(
               ? Math.min(8, cols)
               : id === 'catalog-explorer'
                 ? Math.min(3, cols)
-                : id.startsWith('chart-')
+                : id === 'bookmark-signals-7d' || id.startsWith('chart-')
                   ? Math.min(6, cols)
                   : Math.min(4, cols);
           const defaultH =
-            id.includes('chart') || id === 'prose-briefing' || id === 'catalog-explorer' ? 9 : 6;
+            id.includes('chart') || id === 'prose-briefing' || id === 'catalog-explorer'
+              ? 9
+              : id === 'bookmark-signals-7d'
+                ? 7
+                : 6;
           return [
             ...list,
             {
@@ -513,7 +522,7 @@ export const useDashboardStore = create<DashboardState>()(
         })),
     }),
     {
-      name: 'dashinvest-workspace-v2',
+      name: 'dashinvest-workspace-v3',
       storage: createJSONStorage((): StateStorage => {
         if (typeof window !== 'undefined' && window.localStorage) {
           return window.localStorage;

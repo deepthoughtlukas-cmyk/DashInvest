@@ -336,4 +336,64 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     expect(errors.consoleErrors).toEqual([]);
     expect(errors.failedApiResponses).toEqual([]);
   });
+
+  test('displays Bookmark-Signale (7 Tage) widget for all bookmarked assets, filters & toggles cleanly', async ({
+    page,
+  }) => {
+    const errors = attachErrorListeners(page);
+    await waitForDashboardReady(page);
+
+    const signalsCard = widgetCard(page, 'Bookmark-Signale (7 Tage)');
+    const catalogCard = widgetCard(page, 'Wertpapier-Katalog & Bookmarks');
+    const chartCard = widgetCard(page, 'Master Chart Terminal');
+
+    await signalsCard.scrollIntoViewIfNeeded();
+    await expect(signalsCard).toBeVisible();
+    await expect(
+      signalsCard.getByText('Prüfe 7-Tage-Signale aller Bookmarks…'),
+    ).toBeHidden({ timeout: 25_000 });
+
+    // All 7 default bookmarks (Gold, Silber, S&P 500, Nasdaq 100, DAX 40, NVIDIA, Bitcoin) must be tracked (> 6!)
+    await expect(signalsCard.getByText('7 Bookmarks aktiv')).toBeVisible();
+    const assetSelect = signalsCard.getByLabel('Bookmark-Asset filtern');
+    await expect(assetSelect.locator('option[value="ALL"]')).toHaveText('Alle Bookmarks (7)');
+    await expect(assetSelect.locator('option[value="BTC-USD"]')).toBeAttached();
+
+    // Filter pills respond cleanly
+    await signalsCard.getByRole('button', { name: /^Bullisch/ }).click();
+    await signalsCard.getByRole('button', { name: /^Bärisch/ }).click();
+    await signalsCard.getByRole('button', { name: /^Warnung/ }).click();
+    await signalsCard.getByRole('button', { name: /^Alle/ }).click();
+
+    // Toggling a new bookmark in Catalog dynamically adds the 8th asset to the 7-day widget
+    await catalogCard.getByRole('button', { name: 'Bookmark Apple' }).click();
+    await expect(signalsCard.getByText('8 Bookmarks aktiv')).toBeVisible({ timeout: 15_000 });
+    await expect(assetSelect.locator('option[value="ALL"]')).toHaveText('Alle Bookmarks (8)');
+    await expect(assetSelect.locator('option[value="AAPL"]')).toBeAttached();
+
+    // Restore bookmark state
+    await catalogCard.getByRole('button', { name: 'Bookmark Apple' }).click();
+    await expect(signalsCard.getByText('7 Bookmarks aktiv')).toBeVisible();
+
+    // If signals exist within the 7-day window, verify clicking a signal focuses Master Chart
+    const signalCountText = await signalsCard.getByText(/\d+ Signale? \(7T\)/).textContent();
+    const totalSignals = Number.parseInt(signalCountText ?? '0', 10);
+    if (totalSignals > 0) {
+      await signalsCard.locator('div.grid button').first().click();
+      await expect(chartCard.locator('canvas').first()).toBeVisible();
+    }
+
+    // Verify widget can be toggled off and back on via + Widgets drawer
+    await page.getByRole('button', { name: /Widgets \(\d+\)/ }).click();
+    const drawer = page.locator('div.fixed', { hasText: 'Widget-Katalog flexibel anordnen' });
+    await drawer.getByRole('button', { name: /Bookmark-Signale \(7 Tage\)/ }).click();
+    await expect(signalsCard).toBeHidden();
+    await drawer.getByRole('button', { name: /Bookmark-Signale \(7 Tage\)/ }).click();
+    await expect(signalsCard).toBeVisible();
+    await drawer.locator('button').first().click();
+
+    expect(errors.pageErrors).toEqual([]);
+    expect(errors.consoleErrors).toEqual([]);
+    expect(errors.failedApiResponses).toEqual([]);
+  });
 });

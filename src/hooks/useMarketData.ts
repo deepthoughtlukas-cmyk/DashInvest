@@ -3,6 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { inferAssetClass, resolveCanonicalSymbol } from '../../shared/catalog.ts';
 import type {
   AssetCandlesResponse,
+  Candle,
   CatalogAsset,
   ElliottDegree,
   MacroOverview,
@@ -11,8 +12,10 @@ import type {
   Timeframe,
 } from '../../shared/types.ts';
 import {
+  collectBookmarkedSignals,
   evaluateMacroRegime,
   runFullAssetAnalysis,
+  type BookmarkedSignalEvent,
   type FullAssetAnalysis,
   type MacroRegimeEvaluation,
 } from '../engine/signals.ts';
@@ -126,15 +129,25 @@ export function useDashboardIntelligence(
   const quotesQuery = useBatchQuotesQuery(allSymbols, refetchIntervalMs);
   const macroQuery = useMacroOverviewQuery(Math.max(refetchIntervalMs, 120_000));
 
-  // Focus assets for Signal Matrix & Macro Cross-Asset Prose: up to 6 bookmarked assets (or first 4 catalog items)
+  const bookmarkedAssets = useMemo(
+    () => catalogAssets.filter((a) => a.bookmarked),
+    [catalogAssets],
+  );
+
+  // Focus assets for Signal Matrix & Macro Cross-Asset Prose: up to 6 bookmarked assets (or first 6 catalog items)
   const focusAssets = useMemo(() => {
-    const bookmarked = catalogAssets.filter((a) => a.bookmarked);
-    const base = bookmarked.length > 0 ? bookmarked : catalogAssets;
+    const base = bookmarkedAssets.length > 0 ? bookmarkedAssets : catalogAssets;
     return base.slice(0, 6);
-  }, [catalogAssets]);
+  }, [bookmarkedAssets, catalogAssets]);
+
+  // Track daily data for ALL bookmarked assets (no 6-asset cap) so the 7-day signal widget covers every bookmark
+  const dailyTrackedAssets = useMemo(
+    () => (bookmarkedAssets.length > 0 ? bookmarkedAssets : focusAssets),
+    [bookmarkedAssets, focusAssets],
+  );
 
   const dailyQueries = useQueries({
-    queries: focusAssets.map((item) => ({
+    queries: dailyTrackedAssets.map((item) => ({
       queryKey: ['market', 'candles', item.symbol, '1d'],
       queryFn: () =>
         fetchJson<AssetCandlesResponse>(
@@ -165,12 +178,14 @@ export function useDashboardIntelligence(
     return map;
   }, [quotesQuery.data]);
 
-  const dailyAnalyses = useMemo(() => {
-    const map: Record<string, FullAssetAnalysis> = {};
-    focusAssets.forEach((item, idx) => {
+  const { dailyCandlesMap, dailyAnalyses } = useMemo(() => {
+    const candlesMap: Record<string, Candle[]> = {};
+    const analysesMap: Record<string, FullAssetAnalysis> = {};
+    dailyTrackedAssets.forEach((item, idx) => {
       const candles = dailyQueries[idx]?.data?.candles;
       if (candles && candles.length > 0) {
-        map[item.symbol] = runFullAssetAnalysis(
+        candlesMap[item.symbol] = candles;
+        analysesMap[item.symbol] = runFullAssetAnalysis(
           item.symbol,
           candles,
           macroQuery.data,
@@ -180,8 +195,18 @@ export function useDashboardIntelligence(
         );
       }
     });
-    return map;
-  }, [focusAssets, dailyQueries, macroQuery.data, elliottDegree]);
+    return { dailyCandlesMap: candlesMap, dailyAnalyses: analysesMap };
+  }, [dailyTrackedAssets, dailyQueries, macroQuery.data, elliottDegree]);
+
+  const bookmarkedSignals7d: BookmarkedSignalEvent[] = useMemo(
+    () => collectBookmarkedSignals(bookmarkedAssets, dailyCandlesMap, dailyAnalyses, 7),
+    [bookmarkedAssets, dailyCandlesMap, dailyAnalyses],
+  );
+
+  const bookmarkedSignalsLoading =
+    bookmarkedAssets.length > 0 &&
+    dailyQueries.some((q) => q.isLoading) &&
+    bookmarkedSignals7d.length === 0;
 
   const activeCatalogAsset = useMemo(
     () => catalogAssets.find((a) => a.symbol === canonicalActive),
@@ -256,6 +281,9 @@ export function useDashboardIntelligence(
     quoteMap,
     macroRegime,
     focusAssets,
+    bookmarkedAssets,
+    bookmarkedSignals7d,
+    bookmarkedSignalsLoading,
     dailyAnalyses,
     activeAnalysis,
     macroProseReport,

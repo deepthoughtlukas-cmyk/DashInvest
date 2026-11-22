@@ -7,13 +7,18 @@ import {
   type ResponsiveLayouts,
 } from 'react-grid-layout';
 import type { CatalogAsset, MacroOverview, QuoteSummary } from '../../../shared/types.ts';
-import type { FullAssetAnalysis, MacroRegimeEvaluation } from '../../engine/signals.ts';
+import type {
+  BookmarkedSignalEvent,
+  FullAssetAnalysis,
+  MacroRegimeEvaluation,
+} from '../../engine/signals.ts';
 import type { ProseReport } from '../../engine/proseAnalysis.ts';
 import { useDashboardStore, type WidgetId } from '../../store/dashboardStore.ts';
 import { WIDGET_REGISTRY } from './WidgetRegistry.ts';
 import { WidgetCard } from './WidgetCard.tsx';
 import { AdvancedChart } from '../chart/AdvancedChart.tsx';
 import { CatalogExplorerWidget } from '../widgets/CatalogExplorerWidget.tsx';
+import { BookmarkSignalsWidget } from '../widgets/BookmarkSignalsWidget.tsx';
 import { NetLiquidityWidget } from '../widgets/NetLiquidityWidget.tsx';
 import { CreditSpreadsWidget } from '../widgets/CreditSpreadsWidget.tsx';
 import { DxyWidget } from '../widgets/DxyWidget.tsx';
@@ -27,6 +32,9 @@ interface DashboardGridProps {
   macroLoading: boolean;
   quoteMap: Map<string, QuoteSummary>;
   focusAssets: CatalogAsset[];
+  bookmarkedAssets: CatalogAsset[];
+  bookmarkedSignals7d: BookmarkedSignalEvent[];
+  bookmarkedSignalsLoading: boolean;
   dailyAnalyses: Record<string, FullAssetAnalysis>;
   macroRegime: MacroRegimeEvaluation | null;
   macroProseReport: ProseReport | null;
@@ -55,6 +63,9 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
   macroLoading,
   quoteMap,
   focusAssets,
+  bookmarkedAssets,
+  bookmarkedSignals7d,
+  bookmarkedSignalsLoading,
   dailyAnalyses,
   macroRegime,
   macroProseReport,
@@ -132,6 +143,14 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
             quoteMap={quoteMap}
             dailyAnalyses={dailyAnalyses}
             macroRegime={macroRegime}
+          />
+        );
+      case 'bookmark-signals-7d':
+        return (
+          <BookmarkSignalsWidget
+            bookmarkedAssets={bookmarkedAssets}
+            signals={bookmarkedSignals7d}
+            isLoading={bookmarkedSignalsLoading}
           />
         );
       case 'macro-liquidity':

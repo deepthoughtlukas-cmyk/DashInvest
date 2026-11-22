@@ -60,6 +60,13 @@ export const WIDGET_REGISTRY: Record<WidgetId, WidgetDefinition> = {
     subtitle: 'Score-Übersicht deiner Bookmarks & Live-Signal-Feed',
     category: 'Analyse & Signale',
   },
+  'bookmark-signals-7d': {
+    id: 'bookmark-signals-7d',
+    title: 'Bookmark-Signale (7 Tage)',
+    subtitle: 'Alle ausgelösten Signale der letzten 7 Tage für alle als Bookmark markierten Assets',
+    category: 'Analyse & Signale',
+    badge: '7 Tage',
+  },
   'macro-liquidity': {
     id: 'macro-liquidity',
     title: 'US-Marktliquidität (Fed Net Liquidity)',
