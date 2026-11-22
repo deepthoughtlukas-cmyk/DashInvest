@@ -3,6 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { inferAssetClass, resolveCanonicalSymbol } from '../../shared/catalog.ts';
 import type {
   AssetCandlesResponse,
+  AssetFundamentals,
   Candle,
   CatalogAsset,
   ElliottDegree,
@@ -107,6 +108,20 @@ export function useAssetCandlesQuery(
     enabled: symbol.length > 0,
     refetchInterval: refetchIntervalMs,
     staleTime: 25_000,
+  });
+}
+
+export function useAssetFundamentalsQuery(symbolOrId: string, enabled = true) {
+  const symbol = resolveCanonicalSymbol(symbolOrId);
+  return useQuery({
+    queryKey: ['market', 'fundamentals', symbol],
+    queryFn: () =>
+      fetchJson<AssetFundamentals>(
+        `/api/market/fundamentals?symbol=${encodeURIComponent(symbol)}`,
+      ),
+    enabled: enabled && symbol.length > 0,
+    staleTime: 10 * 60_000,
+    retry: 1,
   });
 }
 

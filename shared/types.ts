@@ -89,6 +89,79 @@ export interface MacroPoint {
   value: number;
 }
 
+export interface DividendYearPoint {
+  year: number;
+  amount: number;
+  payments: number;
+  isPartial?: boolean;
+}
+
+export interface AnalystConsensus {
+  recommendationKey: string | null;
+  recommendationLabel: string | null;
+  recommendationMean: number | null;
+  numberOfAnalysts: number | null;
+  targetLow: number | null;
+  targetMean: number | null;
+  targetHigh: number | null;
+  upsidePercent: number | null;
+  breakdown: {
+    strongBuy: number;
+    buy: number;
+    hold: number;
+    sell: number;
+    strongSell: number;
+  } | null;
+}
+
+export interface AssetFundamentals {
+  symbol: string;
+  quoteType: string | null;
+  currency: string | null;
+  sector: string | null;
+  industry: string | null;
+  marketCap: number | null;
+  totalAssets: number | null;
+  circulatingSupply: number | null;
+  expenseRatioPercent: number | null;
+  beta: number | null;
+  fiftyTwoWeekLow: number | null;
+  fiftyTwoWeekHigh: number | null;
+  nextEarningsDate: string | null;
+  valuation: {
+    trailingPE: number | null;
+    forwardPE: number | null;
+    priceToBook: number | null;
+    priceToSales: number | null;
+    pegRatio: number | null;
+    evToEbitda: number | null;
+    trailingEps: number | null;
+    forwardEps: number | null;
+  };
+  growthAndQuality: {
+    earningsGrowthPercent: number | null;
+    revenueGrowthPercent: number | null;
+    returnOnEquityPercent: number | null;
+    profitMarginPercent: number | null;
+    operatingMarginPercent: number | null;
+    debtToEquityPercent: number | null;
+    freeCashflow: number | null;
+  };
+  dividend: {
+    yieldPercent: number | null;
+    annualRate: number | null;
+    payoutRatioPercent: number | null;
+    fiveYearAvgYieldPercent: number | null;
+    exDividendDate: string | null;
+    cagr5yPercent: number | null;
+    consecutiveYears: number;
+    annualHistory: DividendYearPoint[];
+  };
+  analyst: AnalystConsensus;
+  updatedAt: string;
+  stale?: boolean;
+}
+
 export interface NetLiquidityPoint {
   date: string; // YYYY-MM-DD
   netLiquidity: number; // Billions USD

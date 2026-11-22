@@ -337,6 +337,24 @@ export function createApp(options: CreateAppOptions = {}) {
     await handleCandlesRequest(req.params.assetId, req.query.tf, res);
   });
 
+  app.get('/api/market/fundamentals', async (req, res) => {
+    const rawSymbol = String(req.query.symbol ?? '').trim();
+    if (!rawSymbol || !isValidTickerSymbol(rawSymbol)) {
+      res.status(400).json({ error: `Ungültiges Symbol: ${rawSymbol}` });
+      return;
+    }
+
+    const symbol = resolveCanonicalSymbol(rawSymbol);
+    try {
+      const fundamentals = await yahoo.getFundamentals(symbol);
+      res.json(fundamentals);
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : `Fehler beim Laden der Fundamentaldaten für ${symbol}`,
+      });
+    }
+  });
+
   app.get('/api/macro/overview', async (_req, res) => {
     try {
       const { data, stale } = await overviewCache.getOrLoad(

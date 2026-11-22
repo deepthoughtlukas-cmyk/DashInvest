@@ -23,6 +23,7 @@ describe('Dashboard Zustand Store & Presets', () => {
       layoutLocked: false,
       proseTab: 'macro',
       proseDepth: 'detailed',
+      showFundamentalsSidebar: true,
       manualFibs: {},
     });
   });
@@ -70,6 +71,7 @@ describe('Dashboard Zustand Store & Presets', () => {
     store.setLayoutLocked(true);
     store.setProseTab('asset');
     store.setProseDepth('compact');
+    store.setShowFundamentalsSidebar(false);
     store.updateChartSetting('showIchimoku', true);
     store.setManualFib('^NDX', {
       start: { time: 100, price: 24000 },
@@ -82,6 +84,7 @@ describe('Dashboard Zustand Store & Presets', () => {
     expect(updated.layoutLocked).toBe(true);
     expect(updated.proseTab).toBe('asset');
     expect(updated.proseDepth).toBe('compact');
+    expect(updated.showFundamentalsSidebar).toBe(false);
     expect(updated.chartSettings.showIchimoku).toBe(true);
     expect(updated.manualFibs['^NDX']?.end.price).toBe(26000);
 

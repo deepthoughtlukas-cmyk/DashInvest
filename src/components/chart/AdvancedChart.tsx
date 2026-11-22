@@ -18,6 +18,8 @@ import {
   FolderOpen,
   Maximize2,
   Minimize2,
+  PanelRightClose,
+  PanelRightOpen,
   PenTool,
   RefreshCw,
   Star,
@@ -45,6 +47,7 @@ import { computeFibonacciFromAnchors, type FibAnchor } from '../../engine/fibona
 import { runFullAssetAnalysis } from '../../engine/signals.ts';
 import { FibonacciPrimitive } from './primitives/FibonacciPrimitive.ts';
 import { ElliottWavePrimitive } from './primitives/ElliottWavePrimitive.ts';
+import { FundamentalsSidebar } from './FundamentalsSidebar.tsx';
 
 interface AdvancedChartProps {
   lockedSymbol?: string;
@@ -79,11 +82,13 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
     activeSymbol,
     activeTimeframe,
     refreshIntervalMs,
+    showFundamentalsSidebar,
     chartSettings,
     manualFibs,
     catalogAssets,
     setActiveSymbol,
     setActiveTimeframe,
+    setShowFundamentalsSidebar,
     updateChartSetting,
     setManualFib,
     toggleBookmark,
@@ -818,6 +823,31 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
             LOG
           </button>
 
+          {!lockedSymbol && !compact && (
+            <button
+              type="button"
+              onClick={() => setShowFundamentalsSidebar(!showFundamentalsSidebar)}
+              aria-expanded={showFundamentalsSidebar}
+              title={
+                showFundamentalsSidebar
+                  ? 'Fundamentaldaten einklappen'
+                  : 'Fundamentaldaten einblenden'
+              }
+              className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition ${
+                showFundamentalsSidebar
+                  ? 'border-sky-500/60 bg-sky-500/20 text-sky-300'
+                  : 'border-slate-800 bg-slate-900/70 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {showFundamentalsSidebar ? (
+                <PanelRightClose className="h-3.5 w-3.5" />
+              ) : (
+                <PanelRightOpen className="h-3.5 w-3.5" />
+              )}
+              <span className="hidden sm:inline">Fundamental</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setIsFullscreen(!fullscreenMode)}
@@ -1009,37 +1039,52 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
         )}
       </div>
 
-      {/* Main Chart Canvas Host */}
-      <div className="relative min-h-[240px] flex-1">
-        {drawStep !== 'idle' && (
-          <div className="pointer-events-none absolute top-2 left-3 z-20 flex items-center gap-1.5 rounded-md border border-sky-400/50 bg-sky-950/90 px-2.5 py-1 text-xs font-medium text-sky-200 shadow-lg">
-            <Crosshair className="h-3.5 w-3.5" />
-            {drawStep === 'pick_start'
-              ? 'Schritt 1/2: Klicke im Chart auf den Start-Swing (0 % / 100 %)'
-              : 'Schritt 2/2: Klicke auf den End-Swing für das manuelle Fibonacci'}
-          </div>
-        )}
+      {/* Main Chart Canvas + Collapsible Fundamentals Sidebar */}
+      <div className="flex min-h-[240px] flex-1 overflow-hidden">
+        <div className="relative min-w-0 flex-1">
+          {drawStep !== 'idle' && (
+            <div className="pointer-events-none absolute top-2 left-3 z-20 flex items-center gap-1.5 rounded-md border border-sky-400/50 bg-sky-950/90 px-2.5 py-1 text-xs font-medium text-sky-200 shadow-lg">
+              <Crosshair className="h-3.5 w-3.5" />
+              {drawStep === 'pick_start'
+                ? 'Schritt 1/2: Klicke im Chart auf den Start-Swing (0 % / 100 %)'
+                : 'Schritt 2/2: Klicke auf den End-Swing für das manuelle Fibonacci'}
+            </div>
+          )}
 
-        {candlesQuery.isLoading && candles.length === 0 ? (
-          <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-400">
-            <RefreshCw className="h-4 w-4 animate-spin text-sky-400" />
-            Lade Marktdaten für {meta.shortName}…
-          </div>
-        ) : candlesQuery.isError && candles.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-rose-400">
-            <span>Fehler beim Laden von {meta.shortName}: {(candlesQuery.error as Error).message}</span>
-            <button
-              type="button"
-              onClick={() => candlesQuery.refetch()}
-              className="rounded border border-slate-700 bg-slate-800 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
-            >
-              Erneut versuchen
-            </button>
-          </div>
-        ) : (
-          <div
-            ref={fullscreenMode ? fullscreenHostRef : chartHostRef}
-            className="h-full w-full"
+          {candlesQuery.isLoading && candles.length === 0 ? (
+            <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-400">
+              <RefreshCw className="h-4 w-4 animate-spin text-sky-400" />
+              Lade Marktdaten für {meta.shortName}…
+            </div>
+          ) : candlesQuery.isError && candles.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-rose-400">
+              <span>Fehler beim Laden von {meta.shortName}: {(candlesQuery.error as Error).message}</span>
+              <button
+                type="button"
+                onClick={() => candlesQuery.refetch()}
+                className="rounded border border-slate-700 bg-slate-800 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
+              >
+                Erneut versuchen
+              </button>
+            </div>
+          ) : (
+            <div
+              ref={fullscreenMode ? fullscreenHostRef : chartHostRef}
+              className="h-full w-full"
+            />
+          )}
+        </div>
+
+        {!lockedSymbol && !compact && showFundamentalsSidebar && (
+          <FundamentalsSidebar
+            symbol={symbol}
+            assetName={meta.name}
+            shortName={meta.shortName}
+            currentPrice={displayPrice}
+            decimals={meta.decimals}
+            unit={meta.unit}
+            onCollapse={() => setShowFundamentalsSidebar(false)}
+            onSelectSymbol={(sym) => setActiveSymbol(sym)}
           />
         )}
       </div>

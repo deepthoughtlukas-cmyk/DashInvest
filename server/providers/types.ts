@@ -1,4 +1,5 @@
 import type {
+  AssetFundamentals,
   Candle,
   MacroPoint,
   QuoteSummary,
@@ -12,6 +13,7 @@ export interface MarketDataProvider {
   getQuote(symbolOrId: string): Promise<QuoteSummary>;
   getDailyHistory(symbolOrId: string, range?: string): Promise<MacroPoint[]>;
   searchSymbols(query: string): Promise<SymbolSearchResult[]>;
+  getFundamentals(symbolOrId: string): Promise<AssetFundamentals>;
 }
 
 export interface MacroDataProvider {

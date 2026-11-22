@@ -2,6 +2,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type {
+  AssetFundamentals,
   Candle,
   MacroPoint,
   QuoteSummary,
@@ -102,6 +103,67 @@ describe('Express API Integration (/api/*)', () => {
       }
       return [];
     },
+    async getFundamentals(symbolOrId: string): Promise<AssetFundamentals> {
+      return {
+        symbol: symbolOrId,
+        quoteType: 'EQUITY',
+        currency: 'USD',
+        sector: 'Technology',
+        industry: 'Semiconductors',
+        marketCap: 3_000_000_000_000,
+        totalAssets: null,
+        circulatingSupply: null,
+        expenseRatioPercent: null,
+        beta: 1.65,
+        fiftyTwoWeekLow: 90,
+        fiftyTwoWeekHigh: 160,
+        nextEarningsDate: '2026-12-01',
+        valuation: {
+          trailingPE: 35.2,
+          forwardPE: 28.4,
+          priceToBook: 18.5,
+          priceToSales: 15.1,
+          pegRatio: 1.4,
+          evToEbitda: 25.0,
+          trailingEps: 3.56,
+          forwardEps: 4.42,
+        },
+        growthAndQuality: {
+          earningsGrowthPercent: 62.5,
+          revenueGrowthPercent: 58.1,
+          returnOnEquityPercent: 85.0,
+          profitMarginPercent: 48.2,
+          operatingMarginPercent: 54.0,
+          debtToEquityPercent: 18.5,
+          freeCashflow: 60_000_000_000,
+        },
+        dividend: {
+          yieldPercent: 0.45,
+          annualRate: 0.56,
+          payoutRatioPercent: 5.2,
+          fiveYearAvgYieldPercent: 0.4,
+          exDividendDate: '2026-11-10',
+          cagr5yPercent: 12.4,
+          consecutiveYears: 5,
+          annualHistory: [
+            { year: 2024, amount: 0.48, payments: 4 },
+            { year: 2025, amount: 0.56, payments: 4 },
+          ],
+        },
+        analyst: {
+          recommendationKey: 'buy',
+          recommendationLabel: 'Kauf',
+          recommendationMean: 1.75,
+          numberOfAnalysts: 48,
+          targetLow: 110,
+          targetMean: 165,
+          targetHigh: 210,
+          upsidePercent: 31.5,
+          breakdown: { strongBuy: 12, buy: 28, hold: 7, sell: 1, strongSell: 0 },
+        },
+        updatedAt: '2026-11-22T14:00:00Z',
+      };
+    },
   };
 
   const mockFred: MacroDataProvider = {
@@ -193,6 +255,18 @@ describe('Express API Integration (/api/*)', () => {
     // Invalid ticker syntax rejected with 400
     const badRes = await fetch(`${baseUrl}/api/market/candles?symbol=${encodeURIComponent('BAD SYMBOL!')}`);
     expect(badRes.status).toBe(400);
+
+    // Fundamentals endpoint
+    const fundRes = await fetch(`${baseUrl}/api/market/fundamentals?symbol=NVDA`);
+    expect(fundRes.status).toBe(200);
+    const fundJson = (await fundRes.json()) as AssetFundamentals;
+    expect(fundJson.symbol).toBe('NVDA');
+    expect(fundJson.valuation.trailingPE).toBe(35.2);
+    expect(fundJson.valuation.priceToBook).toBe(18.5);
+    expect(fundJson.analyst.recommendationLabel).toBe('Kauf');
+
+    const badFundRes = await fetch(`${baseUrl}/api/market/fundamentals?symbol=BAD%20SYM`);
+    expect(badFundRes.status).toBe(400);
   });
 
   it('serves unit-normalized /api/macro/overview and falls back to stale cache when upstream fails', async () => {

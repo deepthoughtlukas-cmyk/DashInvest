@@ -396,4 +396,50 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     expect(errors.consoleErrors).toEqual([]);
     expect(errors.failedApiResponses).toEqual([]);
   });
+
+  test('renders collapsible Fundamentaldaten-Sidebar in Master Chart Terminal with valuation, growth, dividend history & analyst consensus', async ({
+    page,
+  }) => {
+    const errors = attachErrorListeners(page);
+    await waitForDashboardReady(page);
+
+    const chartCard = widgetCard(page, 'Master Chart Terminal');
+    const sidebar = chartCard.getByLabel('Fundamentaldaten-Sidebar');
+
+    // 1. Visible by default on initial Gold chart with 52W range & quick-switch buttons
+    await expect(sidebar).toBeVisible();
+    await expect(sidebar.getByText('52W Spanne')).toBeVisible({ timeout: 20_000 });
+
+    // 2. Quick-switch to AAPL -> loads full fundamental metrics from /api/market/fundamentals
+    await sidebar.getByRole('button', { name: 'AAPL · Apple' }).click();
+    await expect(sidebar.getByText('KGV (TTM)')).toBeVisible({ timeout: 20_000 });
+    await expect(sidebar.getByText('Forward KGV')).toBeVisible();
+    await expect(sidebar.getByText('KBV')).toBeVisible();
+    await expect(sidebar.getByText('Gewinnwachstum')).toBeVisible();
+    await expect(sidebar.getByText('Dividendenrendite')).toBeVisible();
+    await expect(sidebar.getByText('Dividendenhistorie')).toBeVisible();
+    await expect(sidebar.getByText('Analysten-Konsens')).toBeVisible();
+    await expect(sidebar.getByText(/Kursziel \(Ø\)/)).toBeVisible();
+
+    // 3. Measure canvas width with sidebar open, collapse via sidebar button -> canvas widens cleanly
+    const expandedBox = (await chartCard.locator('canvas').first().boundingBox())!;
+    await sidebar.getByRole('button', { name: 'Fundamental-Sidebar einklappen' }).click();
+    await expect(sidebar).toBeHidden();
+
+    // Wait briefly for ResizeObserver to expand chart canvas
+    await expect
+      .poll(async () => (await chartCard.locator('canvas').first().boundingBox())?.width ?? 0)
+      .toBeGreaterThan(expandedBox.width + 100);
+
+    // 4. Re-expand via toolbar Fundamental toggle button
+    const toggleBtn = chartCard.getByRole('button', { name: 'Fundamental', exact: true });
+    await expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
+    await toggleBtn.click();
+    await expect(sidebar).toBeVisible();
+    await expect(toggleBtn).toHaveAttribute('aria-expanded', 'true');
+
+    expect(errors.pageErrors).toEqual([]);
+    expect(errors.consoleErrors).toEqual([]);
+    expect(errors.failedApiResponses).toEqual([]);
+  });
 });

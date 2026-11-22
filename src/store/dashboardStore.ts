@@ -249,6 +249,7 @@ interface DashboardState {
   refreshIntervalMs: number;
   proseTab: ProseTab;
   proseDepth: ProseDepth;
+  showFundamentalsSidebar: boolean;
   chartSettings: ChartSettings;
   manualFibs: Record<string, ManualFibPair>;
   folders: AssetFolder[];
@@ -263,6 +264,7 @@ interface DashboardState {
   resetCurrentPreset: () => void;
   setProseTab: (tab: ProseTab) => void;
   setProseDepth: (depth: ProseDepth) => void;
+  setShowFundamentalsSidebar: (open: boolean) => void;
   updateChartSetting: <K extends keyof ChartSettings>(key: K, value: ChartSettings[K]) => void;
   setManualFib: (symbol: string, pair: ManualFibPair | null) => void;
   toggleBookmark: (symbol: string) => void;
@@ -288,6 +290,7 @@ export const useDashboardStore = create<DashboardState>()(
       refreshIntervalMs: 60_000,
       proseTab: 'macro',
       proseDepth: 'detailed',
+      showFundamentalsSidebar: true,
       chartSettings: DEFAULT_CHART_SETTINGS,
       manualFibs: {},
       folders: DEFAULT_FOLDERS.map((f) => ({ ...f })),
@@ -371,6 +374,7 @@ export const useDashboardStore = create<DashboardState>()(
 
       setProseTab: (tab) => set({ proseTab: tab }),
       setProseDepth: (depth) => set({ proseDepth: depth }),
+      setShowFundamentalsSidebar: (open) => set({ showFundamentalsSidebar: open }),
 
       updateChartSetting: (key, value) =>
         set((state) => ({
@@ -547,6 +551,7 @@ export const useDashboardStore = create<DashboardState>()(
         layoutLocked: state.layoutLocked,
         proseTab: state.proseTab,
         proseDepth: state.proseDepth,
+        showFundamentalsSidebar: state.showFundamentalsSidebar,
         chartSettings: state.chartSettings,
         manualFibs: state.manualFibs,
         folders: state.folders,
