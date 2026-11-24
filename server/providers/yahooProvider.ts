@@ -45,6 +45,14 @@ const SPECIAL_MACRO_META: Record<string, SymbolMetaConfig> = {
     unit: '%',
     decimals: 3,
   },
+  '^IRX': {
+    symbol: '^IRX',
+    name: '3M US-Treasury Bill',
+    shortName: 'US 3M',
+    currency: 'USD',
+    unit: '%',
+    decimals: 3,
+  },
 };
 
 function lookupStaticMeta(symbolOrId: string): SymbolMetaConfig {

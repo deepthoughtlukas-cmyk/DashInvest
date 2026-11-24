@@ -230,6 +230,16 @@ export function evaluateMacroRegime(macro: MacroOverview): MacroRegimeEvaluation
     alerts.push(`Zinskurve invertiert: 2s10s Spread bei ${macro.us10y.spread2s10sBps} bps`);
   }
 
+  if (macro.us3m?.momentum.status === 'turning_up') {
+    alerts.push(
+      'Zins-Frühsignal (3M): 3M-Rendite dreht aufwärts — oft Vorbote für steigende 10J-Renditen',
+    );
+  } else if (macro.us3m?.momentum.status === 'turning_down') {
+    alerts.push(
+      'Zins-Frühsignal (3M): 3M-Rendite dreht abwärts — oft Vorbote für sinkende 10J-Renditen',
+    );
+  }
+
   // 5. DXY (weight 15%)
   let dxyScore = 0;
   if (macro.dxy.trend === 'bearish' && macro.dxy.quote.changePercent < 0) dxyScore = 2;

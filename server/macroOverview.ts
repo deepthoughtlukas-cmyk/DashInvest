@@ -1,4 +1,5 @@
 import type { MacroOverview, MacroPoint } from '../shared/types.ts';
+import { analyzeUs3mMomentum } from '../shared/yieldMomentum.ts';
 import type { MacroDataProvider, MarketDataProvider } from './providers/types.ts';
 import {
   computeNetLiquiditySeries,
@@ -44,6 +45,12 @@ export async function buildMacroOverview(
     fred.getSeries('RRPONTSYD'),
     yahoo.getDailyHistory('SP500', '10y'),
     yahoo.getDailyHistory('GOLD', '10y'),
+  ]);
+
+  const [us3mQuoteRes, dgs3mRes, t10y3mRes] = await Promise.allSettled([
+    yahoo.getQuote('US3M'),
+    fred.getSeries('DGS3MO'),
+    fred.getSeries('T10Y3M'),
   ]);
 
   // 1. DXY
@@ -134,6 +141,73 @@ export async function buildMacroOverview(
     (_, idx) => idx % 3 === 0 || idx === netLiqSeries.length - 1,
   );
 
+  // 6. 3M US Treasury Yield (DGS3MO / ^IRX) + 10Y-3M Spread + Momentum-Turn Indicator
+  let us3mBlock: MacroOverview['us3m'] | undefined;
+  const dgs3mRaw = dgs3mRes.status === 'fulfilled' ? dgs3mRes.value : [];
+  const dgs3mTrimmed = dgs3mRaw.filter((p) => p.date >= '2020-01-01');
+  const us3mQuote = us3mQuoteRes.status === 'fulfilled' ? us3mQuoteRes.value : null;
+
+  if (dgs3mTrimmed.length > 0 || us3mQuote) {
+    const latest3m = dgs3mTrimmed[dgs3mTrimmed.length - 1];
+    const prev3m = dgs3mTrimmed.length >= 2 ? dgs3mTrimmed[dgs3mTrimmed.length - 2] : latest3m;
+    const yield3m = latest3m ? latest3m.value : us3mQuote?.price ?? 0;
+    const refDate3m = latest3m?.date ?? dgs10Latest.date;
+
+    const w3m =
+      dgs3mTrimmed.length > 0
+        ? findValueOnOrBefore(dgs3mTrimmed, offsetIsoDateDays(refDate3m, -7))
+        : null;
+    const m3m =
+      dgs3mTrimmed.length > 0
+        ? findValueOnOrBefore(dgs3mTrimmed, offsetIsoDateDays(refDate3m, -30))
+        : null;
+    const q3m =
+      dgs3mTrimmed.length > 0
+        ? findValueOnOrBefore(dgs3mTrimmed, offsetIsoDateDays(refDate3m, -91))
+        : null;
+
+    const chg1d3m = us3mQuote
+      ? Math.round(us3mQuote.change * 100)
+      : latest3m && prev3m
+        ? Math.round((latest3m.value - prev3m.value) * 100)
+        : 0;
+    const chg1w3m = w3m ? Math.round((yield3m - w3m.value) * 100) : 0;
+    const chg1m3m = m3m ? Math.round((yield3m - m3m.value) * 100) : 0;
+    const chg3m3m = q3m ? Math.round((yield3m - q3m.value) * 100) : 0;
+
+    const t10y3mRaw = t10y3mRes.status === 'fulfilled' ? t10y3mRes.value : [];
+    const latest10y3m = t10y3mRaw[t10y3mRaw.length - 1];
+    const spread10y3mPercent = latest10y3m
+      ? Number(latest10y3m.value.toFixed(2))
+      : yield3m > 0
+        ? Number((yieldPercent - yield3m).toFixed(2))
+        : null;
+    const spread10y3mBps =
+      spread10y3mPercent !== null ? Math.round(spread10y3mPercent * 100) : null;
+
+    let curveStatus3m: 'normal' | 'flat' | 'inverted' = 'normal';
+    if (spread10y3mPercent !== null) {
+      if (spread10y3mPercent < 0) curveStatus3m = 'inverted';
+      else if (spread10y3mPercent < 0.25) curveStatus3m = 'flat';
+    }
+
+    const momentum = analyzeUs3mMomentum(dgs3mTrimmed, change1mBps);
+
+    us3mBlock = {
+      yieldPercent: Number(yield3m.toFixed(3)),
+      change1dBps: chg1d3m,
+      change1wBps: chg1w3m,
+      change1mBps: chg1m3m,
+      change3mBps: chg3m3m,
+      spread10y3mPercent,
+      spread10y3mBps,
+      curveStatus: curveStatus3m,
+      date: refDate3m,
+      history: dgs3mTrimmed,
+      momentum,
+    };
+  }
+
   return {
     dxy: {
       quote: dxyQuote,
@@ -164,6 +238,7 @@ export async function buildMacroOverview(
       history: dgs10Trimmed,
       spreadHistory: spreadTrimmed,
     },
+    ...(us3mBlock ? { us3m: us3mBlock } : {}),
     creditSpreads: {
       hyOasBps: hyLatest.value,
       hyOasPercent: Number((hyLatest.value / 100).toFixed(2)),

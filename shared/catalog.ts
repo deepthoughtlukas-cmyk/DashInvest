@@ -7,6 +7,7 @@ export const LEGACY_TO_SYMBOL: Record<string, string> = {
   NASDAQ100: '^NDX',
   DXY: 'DX-Y.NYB',
   US10Y: '^TNX',
+  US3M: '^IRX',
 };
 
 export function resolveCanonicalSymbol(input: string): string {

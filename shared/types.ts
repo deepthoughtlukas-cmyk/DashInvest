@@ -204,6 +204,23 @@ export interface NetLiquidityPoint {
   rrp: number;          // Billions USD
 }
 
+export interface Us3mMomentumAnalysis {
+  status: 'turning_up' | 'turning_down' | 'rising' | 'falling' | 'neutral';
+  statusLabel: string;
+  direction: 'up' | 'down' | 'neutral';
+  isTurning: boolean;
+  emaFast: number;
+  emaSlow: number;
+  momentumBps: number;
+  momentumDelta5dBps: number;
+  lastTurnDate: string | null;
+  lastTurnDirection: 'up' | 'down' | null;
+  tradingDaysSinceTurn: number | null;
+  leadSignal: 'diverging_up' | 'diverging_down' | 'aligned';
+  leadSummary: string;
+  summary: string;
+}
+
 export interface MacroOverview {
   dxy: {
     quote: QuoteSummary;
@@ -233,6 +250,19 @@ export interface MacroOverview {
     date: string;
     history: MacroPoint[];
     spreadHistory: MacroPoint[];
+  };
+  us3m?: {
+    yieldPercent: number;
+    change1dBps: number;
+    change1wBps: number;
+    change1mBps: number;
+    change3mBps: number;
+    spread10y3mPercent: number | null;
+    spread10y3mBps: number | null;
+    curveStatus: 'normal' | 'flat' | 'inverted';
+    date: string;
+    history: MacroPoint[];
+    momentum: Us3mMomentumAnalysis;
   };
   creditSpreads: {
     hyOasBps: number;

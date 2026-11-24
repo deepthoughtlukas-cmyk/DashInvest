@@ -24,6 +24,7 @@ import { CreditSpreadsWidget } from '../widgets/CreditSpreadsWidget.tsx';
 import { DxyWidget } from '../widgets/DxyWidget.tsx';
 import { M2Widget } from '../widgets/M2Widget.tsx';
 import { Us10yWidget } from '../widgets/Us10yWidget.tsx';
+import { Us3mWidget } from '../widgets/Us3mWidget.tsx';
 import { SignalMatrixWidget } from '../widgets/SignalMatrixWidget.tsx';
 import { ProseAnalysisWidget } from '../widgets/ProseAnalysisWidget.tsx';
 
@@ -163,6 +164,8 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
         return <M2Widget macro={macro} isLoading={macroLoading} />;
       case 'macro-us10y':
         return <Us10yWidget macro={macro} isLoading={macroLoading} />;
+      case 'macro-us3m':
+        return <Us3mWidget macro={macro} isLoading={macroLoading} />;
     }
   };
 

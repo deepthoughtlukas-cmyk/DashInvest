@@ -95,6 +95,14 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     await expect(y10Card.locator('svg path[data-series="base"]')).toBeVisible();
     await assertOverlayWorks(y10Card);
 
+    // 6. 3M US Treasury Bond & Momentum-Turn Indicator + S&P 500 & Gold overlay
+    const y3mCard = widgetCard(page, '3M US-Treasury & Momentum-Dreh');
+    await expect(y3mCard).toBeVisible();
+    await expect(y3mCard.getByText(/10J–3M:/).first()).toBeVisible();
+    await expect(y3mCard.getByLabel('3M Momentum-Indikator')).toBeVisible();
+    await expect(y3mCard.locator('svg path[data-series="base"]')).toBeVisible();
+    await assertOverlayWorks(y3mCard);
+
     expect(errors.pageErrors).toEqual([]);
     expect(errors.consoleErrors).toEqual([]);
     expect(errors.failedApiResponses).toEqual([]);

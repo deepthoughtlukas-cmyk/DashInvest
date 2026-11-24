@@ -143,6 +143,8 @@ describe('Cloudflare Worker API Proxy (handleWorkerRequest)', () => {
           value: 22000 + i * 80,
         }));
       }
+      if (id === 'DGS3MO') return buildDailySeries(4.15, 0.002, 120);
+      if (id === 'T10Y3M') return buildDailySeries(0.5, 0.001, 120);
       if (id === 'BAMLH0A0HYM2') return buildDailySeries(3.5, -0.002, 120);
       if (id === 'WALCL') return buildDailySeries(6_800_000, 1000, 60);
       if (id === 'WTREGEN') return buildDailySeries(800_000, -500, 60);
@@ -225,6 +227,11 @@ describe('Cloudflare Worker API Proxy (handleWorkerRequest)', () => {
       deps,
     );
     expect(mRes.status).toBe(200);
+    const mJson = (await mRes.json()) as {
+      us3m?: { yieldPercent: number; momentum: { status: string } };
+    };
+    expect(mJson.us3m?.yieldPercent).toBeGreaterThan(4.0);
+    expect(mJson.us3m?.momentum.status).toBeTruthy();
 
     const badRes = await handleWorkerRequest(
       new Request('https://worker.example/api/market/candles?symbol=BAD%20SYM!'),

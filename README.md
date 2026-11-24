@@ -23,6 +23,7 @@ Frei verschieb- und skalierbare Widgets (`react-grid-layout`) mit 3 Presets (*An
 - **US-Dollar-Index (`DXY`):** Live-Kurs, 1T/1W/YTD-Performance, SMA 50/200 Trendstatus
 - **US-Geldmenge `M2` (`M2SL`):** Stand in Bio. USD, YoY-Wachstum & 3M-annualisierte Dynamik
 - **10J US-Anleiherenditen (`^TNX` / `DGS10`):** Live-Rendite, bps-Veränderung und `2s10s`-Spread (`T10Y2Y`)
+- **3M US-Treasury & Momentum-Dreh (`DGS3MO` / `^IRX`):** 3-Monats-Rendite, `10J–3M`-Spread (`T10Y3M`) sowie Vorlauf-Indikator bei Richtungsdrehung des kurzfristigen Zins-Momentums
 - **Credit Spreads (`BAMLH0A0HYM2`):** US High-Yield OAS in `bps`, 5-Jahres-Perzentil & Risk-On/Neutral/Stress-Ampel
 - **Confluence-Matrix & Signal-Feed:** Gewichteter Gesamtscore (`-100` bis `+100`) und aktive Chart-/Makrosignale
 - **Bookmark-Signale (7 Tage):** Eigenständiges Widget mit allen ausgelösten Trend-, Momentum- und Fibonacci-Signalen der letzten 7 Tage für sämtliche gesetzten Bookmarks inkl. Richtungs-/Asset-Filter und Klick-Fokus in den Master-Chart

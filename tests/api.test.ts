@@ -73,6 +73,7 @@ describe('Express API Integration (/api/*)', () => {
         throw new Error('Upstream symbol not found');
       }
       if (symbolOrId === 'US10Y' || symbolOrId === '^TNX') return buildMockQuote(symbolOrId, 4.45);
+      if (symbolOrId === 'US3M' || symbolOrId === '^IRX') return buildMockQuote(symbolOrId, 4.18);
       if (symbolOrId === 'DXY' || symbolOrId === 'DX-Y.NYB') {
         return buildMockQuote(symbolOrId, 103.2);
       }
@@ -189,8 +190,12 @@ describe('Express API Integration (/api/*)', () => {
           });
         case 'DGS10':
           return buildDailySeries(4.7, -0.001, 120);
+        case 'DGS3MO':
+          return buildDailySeries(4.2, 0.002, 120);
         case 'T10Y2Y':
           return buildDailySeries(0.1, 0.002, 120);
+        case 'T10Y3M':
+          return buildDailySeries(0.45, 0.001, 120);
         case 'BAMLH0A0HYM2':
           return buildDailySeries(3.8, -0.003, 120);
         case 'WALCL':
@@ -290,6 +295,11 @@ describe('Express API Integration (/api/*)', () => {
       creditSpreads: { hyOasBps: number };
       m2: { latestB: number; yoyPercent: number };
       us10y: { yieldPercent: number; spread2s10sBps: number };
+      us3m: {
+        yieldPercent: number;
+        spread10y3mBps: number;
+        momentum: { status: string };
+      };
       dxy: { trend: string };
       comparisons: { sp500: MacroPoint[]; gold: MacroPoint[] };
     };
@@ -300,6 +310,9 @@ describe('Express API Integration (/api/*)', () => {
     expect(overview.creditSpreads.hyOasBps).toBeGreaterThan(200);
     expect(overview.m2.yoyPercent).toBeGreaterThan(0);
     expect(overview.us10y.yieldPercent).toBe(4.45);
+    expect(overview.us3m.yieldPercent).toBeGreaterThan(4.0);
+    expect(typeof overview.us3m.spread10y3mBps).toBe('number');
+    expect(overview.us3m.momentum.status).toBeTruthy();
     expect(overview.comparisons.sp500.length).toBeGreaterThan(100);
 
     await new Promise((r) => setTimeout(r, 40));

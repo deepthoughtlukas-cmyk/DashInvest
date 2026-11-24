@@ -21,6 +21,7 @@ describe('Dashboard Zustand Store & Presets', () => {
         'macro-credit',
         'macro-dxy',
         'macro-m2',
+        'macro-us3m',
         'macro-us10y',
       ],
       layouts: getPresetLayouts('analyse-fokus'),
@@ -34,8 +35,9 @@ describe('Dashboard Zustand Store & Presets', () => {
 
   it('switches presets cleanly across analyse-fokus, multi-chart, and makro-cockpit', () => {
     const store = useDashboardStore.getState();
-    expect(store.activeWidgets).toHaveLength(10);
+    expect(store.activeWidgets).toHaveLength(11);
     expect(store.activeWidgets).toContain('bookmark-signals-7d');
+    expect(store.activeWidgets).toContain('macro-us3m');
 
     store.applyPreset('multi-chart');
     const afterMulti = useDashboardStore.getState();

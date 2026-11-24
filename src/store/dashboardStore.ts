@@ -56,6 +56,7 @@ export type WidgetId =
   | 'macro-dxy'
   | 'macro-m2'
   | 'macro-us10y'
+  | 'macro-us3m'
   | 'chart-gold'
   | 'chart-silver'
   | 'chart-sp500'
@@ -72,6 +73,7 @@ const PRESET_WIDGETS: Record<PresetId, WidgetId[]> = {
     'macro-credit',
     'macro-dxy',
     'macro-m2',
+    'macro-us3m',
     'macro-us10y',
   ],
   'multi-chart': [
@@ -85,12 +87,14 @@ const PRESET_WIDGETS: Record<PresetId, WidgetId[]> = {
     'macro-credit',
     'macro-dxy',
     'macro-m2',
+    'macro-us3m',
     'macro-us10y',
   ],
   'makro-cockpit': [
     'macro-liquidity',
     'prose-briefing',
     'macro-credit',
+    'macro-us3m',
     'macro-us10y',
     'macro-dxy',
     'macro-m2',
@@ -112,8 +116,9 @@ export function getPresetLayouts(preset: PresetId): ResponsiveLayouts {
         { i: 'macro-liquidity', x: 0, y: 24, w: 4, h: 6, minW: 3, minH: 5 },
         { i: 'macro-credit', x: 4, y: 24, w: 4, h: 6, minW: 3, minH: 5 },
         { i: 'macro-dxy', x: 8, y: 24, w: 4, h: 6, minW: 3, minH: 4 },
-        { i: 'macro-m2', x: 0, y: 30, w: 6, h: 5, minW: 3, minH: 4 },
-        { i: 'macro-us10y', x: 6, y: 30, w: 6, h: 5, minW: 3, minH: 4 },
+        { i: 'macro-m2', x: 0, y: 30, w: 4, h: 6, minW: 3, minH: 4 },
+        { i: 'macro-us3m', x: 4, y: 30, w: 4, h: 6, minW: 3, minH: 5 },
+        { i: 'macro-us10y', x: 8, y: 30, w: 4, h: 6, minW: 3, minH: 4 },
       ],
       md: [
         { i: 'chart-gold', x: 0, y: 0, w: 5, h: 8, minW: 4, minH: 6 },
@@ -126,7 +131,8 @@ export function getPresetLayouts(preset: PresetId): ResponsiveLayouts {
         { i: 'macro-credit', x: 5, y: 24, w: 5, h: 6, minW: 3, minH: 5 },
         { i: 'macro-dxy', x: 0, y: 30, w: 5, h: 5, minW: 3, minH: 4 },
         { i: 'macro-m2', x: 5, y: 30, w: 5, h: 5, minW: 3, minH: 4 },
-        { i: 'macro-us10y', x: 0, y: 35, w: 10, h: 5, minW: 3, minH: 4 },
+        { i: 'macro-us3m', x: 0, y: 35, w: 5, h: 6, minW: 3, minH: 5 },
+        { i: 'macro-us10y', x: 5, y: 35, w: 5, h: 6, minW: 3, minH: 4 },
       ],
       sm: [
         { i: 'chart-gold', x: 0, y: 0, w: 6, h: 8, minW: 3, minH: 6 },
@@ -139,7 +145,8 @@ export function getPresetLayouts(preset: PresetId): ResponsiveLayouts {
         { i: 'macro-credit', x: 0, y: 52, w: 6, h: 6, minW: 3, minH: 5 },
         { i: 'macro-dxy', x: 0, y: 58, w: 6, h: 5, minW: 3, minH: 4 },
         { i: 'macro-m2', x: 0, y: 63, w: 6, h: 5, minW: 3, minH: 4 },
-        { i: 'macro-us10y', x: 0, y: 68, w: 6, h: 5, minW: 3, minH: 4 },
+        { i: 'macro-us3m', x: 0, y: 68, w: 6, h: 6, minW: 3, minH: 5 },
+        { i: 'macro-us10y', x: 0, y: 74, w: 6, h: 5, minW: 3, minH: 4 },
       ],
     };
   }
@@ -151,30 +158,33 @@ export function getPresetLayouts(preset: PresetId): ResponsiveLayouts {
         { i: 'prose-briefing', x: 7, y: 0, w: 5, h: 12, minW: 4, minH: 7 },
         { i: 'macro-credit', x: 0, y: 7, w: 4, h: 5, minW: 3, minH: 5 },
         { i: 'macro-us10y', x: 4, y: 7, w: 3, h: 5, minW: 3, minH: 4 },
-        { i: 'macro-dxy', x: 0, y: 12, w: 4, h: 5, minW: 3, minH: 4 },
-        { i: 'macro-m2', x: 4, y: 12, w: 4, h: 5, minW: 3, minH: 4 },
-        { i: 'signal-matrix', x: 8, y: 12, w: 4, h: 5, minW: 3, minH: 5 },
-        { i: 'master-chart', x: 0, y: 17, w: 12, h: 10, minW: 5, minH: 7 },
+        { i: 'macro-us3m', x: 0, y: 12, w: 4, h: 6, minW: 3, minH: 5 },
+        { i: 'macro-dxy', x: 4, y: 12, w: 4, h: 6, minW: 3, minH: 4 },
+        { i: 'macro-m2', x: 8, y: 12, w: 4, h: 6, minW: 3, minH: 4 },
+        { i: 'signal-matrix', x: 0, y: 18, w: 4, h: 10, minW: 3, minH: 5 },
+        { i: 'master-chart', x: 4, y: 18, w: 8, h: 10, minW: 5, minH: 7 },
       ],
       md: [
         { i: 'macro-liquidity', x: 0, y: 0, w: 6, h: 7, minW: 4, minH: 5 },
         { i: 'prose-briefing', x: 6, y: 0, w: 4, h: 12, minW: 4, minH: 7 },
         { i: 'macro-credit', x: 0, y: 7, w: 3, h: 5, minW: 3, minH: 5 },
         { i: 'macro-us10y', x: 3, y: 7, w: 3, h: 5, minW: 3, minH: 4 },
-        { i: 'macro-dxy', x: 0, y: 12, w: 3, h: 5, minW: 3, minH: 4 },
-        { i: 'macro-m2', x: 3, y: 12, w: 3, h: 5, minW: 3, minH: 4 },
-        { i: 'signal-matrix', x: 6, y: 12, w: 4, h: 5, minW: 3, minH: 5 },
-        { i: 'master-chart', x: 0, y: 17, w: 10, h: 10, minW: 5, minH: 7 },
+        { i: 'macro-us3m', x: 0, y: 12, w: 4, h: 6, minW: 3, minH: 5 },
+        { i: 'macro-dxy', x: 4, y: 12, w: 3, h: 6, minW: 3, minH: 4 },
+        { i: 'macro-m2', x: 7, y: 12, w: 3, h: 6, minW: 3, minH: 4 },
+        { i: 'signal-matrix', x: 0, y: 18, w: 4, h: 10, minW: 3, minH: 5 },
+        { i: 'master-chart', x: 4, y: 18, w: 6, h: 10, minW: 5, minH: 7 },
       ],
       sm: [
         { i: 'macro-liquidity', x: 0, y: 0, w: 6, h: 6, minW: 3, minH: 5 },
         { i: 'prose-briefing', x: 0, y: 6, w: 6, h: 9, minW: 3, minH: 6 },
         { i: 'macro-credit', x: 0, y: 15, w: 6, h: 6, minW: 3, minH: 5 },
-        { i: 'macro-us10y', x: 0, y: 21, w: 6, h: 5, minW: 3, minH: 4 },
-        { i: 'macro-dxy', x: 0, y: 26, w: 6, h: 5, minW: 3, minH: 4 },
-        { i: 'macro-m2', x: 0, y: 31, w: 6, h: 5, minW: 3, minH: 4 },
-        { i: 'signal-matrix', x: 0, y: 36, w: 6, h: 6, minW: 3, minH: 5 },
-        { i: 'master-chart', x: 0, y: 42, w: 6, h: 9, minW: 3, minH: 7 },
+        { i: 'macro-us3m', x: 0, y: 21, w: 6, h: 6, minW: 3, minH: 5 },
+        { i: 'macro-us10y', x: 0, y: 27, w: 6, h: 5, minW: 3, minH: 4 },
+        { i: 'macro-dxy', x: 0, y: 32, w: 6, h: 5, minW: 3, minH: 4 },
+        { i: 'macro-m2', x: 0, y: 37, w: 6, h: 5, minW: 3, minH: 4 },
+        { i: 'signal-matrix', x: 0, y: 42, w: 6, h: 6, minW: 3, minH: 5 },
+        { i: 'master-chart', x: 0, y: 48, w: 6, h: 9, minW: 3, minH: 7 },
       ],
     };
   }
@@ -190,8 +200,9 @@ export function getPresetLayouts(preset: PresetId): ResponsiveLayouts {
       { i: 'macro-liquidity', x: 0, y: 26, w: 4, h: 6, minW: 3, minH: 5 },
       { i: 'macro-credit', x: 4, y: 26, w: 4, h: 6, minW: 3, minH: 5 },
       { i: 'macro-dxy', x: 8, y: 26, w: 4, h: 6, minW: 3, minH: 4 },
-      { i: 'macro-m2', x: 0, y: 32, w: 6, h: 5, minW: 3, minH: 4 },
-      { i: 'macro-us10y', x: 6, y: 32, w: 6, h: 5, minW: 3, minH: 4 },
+      { i: 'macro-m2', x: 0, y: 32, w: 4, h: 6, minW: 3, minH: 4 },
+      { i: 'macro-us3m', x: 4, y: 32, w: 4, h: 6, minW: 3, minH: 5 },
+      { i: 'macro-us10y', x: 8, y: 32, w: 4, h: 6, minW: 3, minH: 4 },
     ],
     md: [
       { i: 'catalog-explorer', x: 0, y: 0, w: 3, h: 11, minW: 2, minH: 6 },
@@ -201,9 +212,10 @@ export function getPresetLayouts(preset: PresetId): ResponsiveLayouts {
       { i: 'bookmark-signals-7d', x: 0, y: 19, w: 10, h: 7, minW: 4, minH: 5 },
       { i: 'macro-liquidity', x: 0, y: 26, w: 5, h: 6, minW: 3, minH: 5 },
       { i: 'macro-credit', x: 5, y: 26, w: 5, h: 6, minW: 3, minH: 5 },
-      { i: 'macro-dxy', x: 0, y: 32, w: 4, h: 5, minW: 3, minH: 4 },
-      { i: 'macro-m2', x: 4, y: 32, w: 3, h: 5, minW: 3, minH: 4 },
-      { i: 'macro-us10y', x: 7, y: 32, w: 3, h: 5, minW: 3, minH: 4 },
+      { i: 'macro-dxy', x: 0, y: 32, w: 5, h: 6, minW: 3, minH: 4 },
+      { i: 'macro-m2', x: 5, y: 32, w: 5, h: 6, minW: 3, minH: 4 },
+      { i: 'macro-us3m', x: 0, y: 38, w: 5, h: 6, minW: 3, minH: 5 },
+      { i: 'macro-us10y', x: 5, y: 38, w: 5, h: 6, minW: 3, minH: 4 },
     ],
     sm: [
       { i: 'catalog-explorer', x: 0, y: 0, w: 6, h: 7, minW: 3, minH: 5 },
@@ -215,7 +227,8 @@ export function getPresetLayouts(preset: PresetId): ResponsiveLayouts {
       { i: 'macro-credit', x: 0, y: 45, w: 6, h: 6, minW: 3, minH: 5 },
       { i: 'macro-dxy', x: 0, y: 51, w: 6, h: 5, minW: 3, minH: 4 },
       { i: 'macro-m2', x: 0, y: 56, w: 6, h: 5, minW: 3, minH: 4 },
-      { i: 'macro-us10y', x: 0, y: 61, w: 6, h: 5, minW: 3, minH: 4 },
+      { i: 'macro-us3m', x: 0, y: 61, w: 6, h: 6, minW: 3, minH: 5 },
+      { i: 'macro-us10y', x: 0, y: 67, w: 6, h: 5, minW: 3, minH: 4 },
     ],
   };
 }
@@ -291,6 +304,7 @@ const KNOWN_WIDGET_IDS = new Set<string>([
   'macro-credit',
   'macro-dxy',
   'macro-m2',
+  'macro-us3m',
   'macro-us10y',
   'chart-gold',
   'chart-silver',
@@ -640,7 +654,7 @@ export const useDashboardStore = create<DashboardState>()(
         }),
     }),
     {
-      name: 'dashinvest-workspace-v3',
+      name: 'dashinvest-workspace-v4',
       storage: createJSONStorage((): StateStorage => {
         if (typeof window !== 'undefined' && window.localStorage) {
           return window.localStorage;

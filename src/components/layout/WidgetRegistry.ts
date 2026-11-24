@@ -102,6 +102,13 @@ export const WIDGET_REGISTRY: Record<WidgetId, WidgetDefinition> = {
     category: 'Makro & Liquidität',
     badge: 'Live/FRED',
   },
+  'macro-us3m': {
+    id: 'macro-us3m',
+    title: '3M US-Treasury & Momentum-Dreh',
+    subtitle: '3-Monats-Rendite (DGS3MO / ^IRX), 10J–3M Spread & Vorlauf-Indikator für 10J-Zinsen',
+    category: 'Makro & Liquidität',
+    badge: 'Vorlauf',
+  },
 };
 
 export const ALL_WIDGET_IDS = Object.keys(WIDGET_REGISTRY) as WidgetId[];
