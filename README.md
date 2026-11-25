@@ -57,6 +57,24 @@ npm run dev
 - Frontend (Vite): `http://localhost:5173`
 - API-Proxy (Express): `http://localhost:3001`
 
+### Desktop-Verknüpfung (Windows)
+
+Mit folgendem Befehl wird eine Desktop-Verknüpfung (`DashInvest.lnk`) inkl. eigenem App-Icon angelegt, die Backend + Frontend bei Bedarf automatisch minimiert startet und `http://localhost:5173` direkt im Browser öffnet:
+
+```bash
+npm run install:shortcut
+```
+
+### Desktop-Verknüpfung (Windows)
+
+Einmalig einrichten, um DashInvest per Doppelklick vom Windows-Desktop zu starten:
+
+```bash
+npm run install:shortcut
+```
+
+Die Verknüpfung **`DashInvest`** (`scripts/start-dashinvest.ps1`) prüft beim Start automatisch, ob Backend und Frontend bereits laufen — falls nein, startet sie beide minimiert im Hintergrund und öffnet `http://localhost:5173`, sobald der Server bereit ist. Läuft DashInvest bereits, öffnet ein Doppelklick direkt die laufende Oberfläche ohne doppelte Server-Fenster.
+
 ---
 
 ## Tests & Build
