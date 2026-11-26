@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 $ProjectDir = Split-Path -Parent $PSScriptRoot
 $AppUrl = 'http://localhost:5173'
 $ProxyHealthUrl = 'http://localhost:5173/api/health'
-$ApiHealthUrl = 'http://localhost:3001/api/health'
+$ApiHealthUrl = 'http://127.0.0.1:3001/api/health'
 
 function Ensure-NodeOnPath {
   if (Get-Command 'npm.cmd' -ErrorAction SilentlyContinue) {

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   ResponsiveGridLayout,
   useContainerWidth,
@@ -41,6 +42,7 @@ interface DashboardGridProps {
   macroProseReport: ProseReport | null;
   assetProseReport: ProseReport | null;
   onOpenCatalog: () => void;
+  onOpenPattySync: () => void;
 }
 
 function layoutsEqual(a: Layout | undefined, b: Layout | undefined): boolean {
@@ -59,7 +61,7 @@ function layoutsEqual(a: Layout | undefined, b: Layout | undefined): boolean {
   return true;
 }
 
-export const DashboardGrid: React.FC<DashboardGridProps> = ({
+export const DashboardGrid: React.FC<DashboardGridProps> = React.memo(({
   macro,
   macroLoading,
   quoteMap,
@@ -72,9 +74,18 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
   macroProseReport,
   assetProseReport,
   onOpenCatalog,
+  onOpenPattySync,
 }) => {
   const { activeWidgets, layouts, layoutLocked, setLayouts, removeWidget } =
-    useDashboardStore();
+    useDashboardStore(
+      useShallow((s) => ({
+        activeWidgets: s.activeWidgets,
+        layouts: s.layouts,
+        layoutLocked: s.layoutLocked,
+        setLayouts: s.setLayouts,
+        removeWidget: s.removeWidget,
+      })),
+    );
 
   const { width, containerRef, mounted } = useContainerWidth({
     initialWidth: 1280,
@@ -118,7 +129,7 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
   const renderWidgetBody = (id: WidgetId) => {
     switch (id) {
       case 'catalog-explorer':
-        return <CatalogExplorerWidget quoteMap={quoteMap} />;
+        return <CatalogExplorerWidget quoteMap={quoteMap} onOpenPattySync={onOpenPattySync} />;
       case 'master-chart':
         return <AdvancedChart macro={macro} quoteMap={quoteMap} onOpenCatalog={onOpenCatalog} />;
       case 'chart-gold':
@@ -215,4 +226,4 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
       )}
     </div>
   );
-};
+});

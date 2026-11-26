@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -29,12 +30,18 @@ function formatSignalDate(timeSec: number): { ageLabel: string; dateLabel: strin
   return { ageLabel, dateLabel };
 }
 
-export const BookmarkSignalsWidget: React.FC<BookmarkSignalsWidgetProps> = ({
+export const BookmarkSignalsWidget: React.FC<BookmarkSignalsWidgetProps> = React.memo(({
   bookmarkedAssets,
   signals,
   isLoading,
 }) => {
-  const { activeSymbol, setActiveSymbol, setProseTab } = useDashboardStore();
+  const { activeSymbol, setActiveSymbol, setProseTab } = useDashboardStore(
+    useShallow((s) => ({
+      activeSymbol: s.activeSymbol,
+      setActiveSymbol: s.setActiveSymbol,
+      setProseTab: s.setProseTab,
+    })),
+  );
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [assetFilter, setAssetFilter] = useState<string>('ALL');
 
@@ -228,4 +235,4 @@ export const BookmarkSignalsWidget: React.FC<BookmarkSignalsWidgetProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -1,10 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { inferAssetClass, resolveCanonicalSymbol } from '../../shared/catalog.ts';
 import type {
+  AssetClass,
   Candle,
   CatalogAsset,
   ElliottDegree,
+  MacroOverview,
   QuoteSummary,
   Timeframe,
 } from '../../shared/types.ts';
@@ -25,6 +27,7 @@ import {
 import {
   fetchAssetCandlesApi,
   fetchAssetFundamentalsApi,
+  fetchBookmarkDailyCandlesApi,
   fetchMacroOverviewApi,
   fetchQuotesApi,
   fetchSymbolSearchApi,
@@ -41,7 +44,7 @@ export function useQuotesQuery(refetchIntervalMs = 60_000) {
 
 export function useBatchQuotesQuery(symbols: string[], refetchIntervalMs = 60_000) {
   const normalized = useMemo(
-    () => Array.from(new Set(symbols.map((s) => resolveCanonicalSymbol(s)))).slice(0, 45),
+    () => Array.from(new Set(symbols.map((s) => resolveCanonicalSymbol(s)))).slice(0, 250),
     [symbols],
   );
   const queryParam = normalized.join(',');
@@ -100,6 +103,53 @@ export function useAssetFundamentalsQuery(symbolOrId: string, enabled = true) {
   });
 }
 
+export function useFxRateQuery(fxSymbol: string | null) {
+  return useQuery({
+    queryKey: ['market', 'fx', fxSymbol],
+    queryFn: async () => {
+      if (!fxSymbol) return null;
+      const res = await fetchQuotesApi([fxSymbol]);
+      return res.quotes[0]?.price ?? null;
+    },
+    enabled: Boolean(fxSymbol),
+    staleTime: 15 * 60_000,
+    retry: 1,
+  });
+}
+
+const assetAnalysisCache = new WeakMap<Candle[], Map<string, FullAssetAnalysis>>();
+
+export function getCachedFullAssetAnalysis(
+  symbol: string,
+  candles: Candle[],
+  macro: MacroOverview | undefined,
+  timeframe: Timeframe,
+  elliottDegree: ElliottDegree,
+  assetClass: AssetClass,
+  precomputedMacroRegime?: MacroRegimeEvaluation | null,
+): FullAssetAnalysis {
+  let byKey = assetAnalysisCache.get(candles);
+  if (!byKey) {
+    byKey = new Map<string, FullAssetAnalysis>();
+    assetAnalysisCache.set(candles, byKey);
+  }
+  const cacheKey = `${symbol}|${timeframe}|${elliottDegree}|${assetClass}|${macro?.updatedAt ?? 'none'}`;
+  const cached = byKey.get(cacheKey);
+  if (cached) return cached;
+
+  const computed = runFullAssetAnalysis(
+    symbol,
+    candles,
+    macro,
+    timeframe,
+    elliottDegree,
+    assetClass,
+    precomputedMacroRegime,
+  );
+  byKey.set(cacheKey, computed);
+  return computed;
+}
+
 export function useDashboardIntelligence(
   activeSymbol: string,
   catalogAssets: CatalogAsset[],
@@ -136,14 +186,63 @@ export function useDashboardIntelligence(
     [bookmarkedAssets, focusAssets],
   );
 
-  const dailyQueries = useQueries({
+  const largePortfolio = dailyTrackedAssets.length > 15;
+
+  const dailyCombined = useQueries({
     queries: dailyTrackedAssets.map((item) => ({
       queryKey: ['market', 'candles', item.symbol, '1d'],
-      queryFn: () => fetchAssetCandlesApi(item.symbol, '1d'),
-      refetchInterval: refetchIntervalMs,
-      staleTime: 45_000,
+      queryFn: () => fetchBookmarkDailyCandlesApi(item.symbol),
+      refetchInterval: largePortfolio
+        ? Math.max(refetchIntervalMs, 10 * 60_000)
+        : refetchIntervalMs,
+      staleTime: largePortfolio ? 10 * 60_000 : 45_000,
+      gcTime: largePortfolio ? 30 * 60_000 : 5 * 60_000,
+      refetchOnReconnect: !largePortfolio,
+      retry: 1,
     })),
+    combine: (results) => {
+      let signature = '';
+      let anyLoading = false;
+      const candlesBySymbol: Record<string, Candle[]> = {};
+      const quotesBySymbol: Record<string, QuoteSummary> = {};
+
+      for (let i = 0; i < dailyTrackedAssets.length; i++) {
+        const sym = dailyTrackedAssets[i].symbol;
+        const res = results[i];
+        if (res?.isLoading) anyLoading = true;
+        if (res?.data?.candles && res.data.candles.length > 0) {
+          candlesBySymbol[sym] = res.data.candles;
+          if (res.data.quote) quotesBySymbol[sym] = res.data.quote;
+          signature += `${sym}:${res.dataUpdatedAt};`;
+        }
+      }
+      return { signature, candlesBySymbol, quotesBySymbol, anyLoading };
+    },
   });
+
+  const prevDailyDataRef = useRef<{
+    signature: string;
+    candlesMap: Record<string, Candle[]>;
+    quotesMap: Record<string, QuoteSummary>;
+  }>({ signature: '', candlesMap: {}, quotesMap: {} });
+
+  const { dailyCandlesMap, dailyQuotesMap } = useMemo(() => {
+    if (prevDailyDataRef.current.signature === dailyCombined.signature) {
+      return {
+        dailyCandlesMap: prevDailyDataRef.current.candlesMap,
+        dailyQuotesMap: prevDailyDataRef.current.quotesMap,
+      };
+    }
+    prevDailyDataRef.current = {
+      signature: dailyCombined.signature,
+      candlesMap: dailyCombined.candlesBySymbol,
+      quotesMap: dailyCombined.quotesBySymbol,
+    };
+    return {
+      dailyCandlesMap: dailyCombined.candlesBySymbol,
+      dailyQuotesMap: dailyCombined.quotesBySymbol,
+    };
+  }, [dailyCombined.signature, dailyCombined.candlesBySymbol, dailyCombined.quotesBySymbol]);
 
   const activeCandlesQuery = useAssetCandlesQuery(
     canonicalActive,
@@ -165,25 +264,24 @@ export function useDashboardIntelligence(
     return map;
   }, [quotesQuery.data]);
 
-  const { dailyCandlesMap, dailyAnalyses } = useMemo(() => {
-    const candlesMap: Record<string, Candle[]> = {};
+  const dailyAnalyses = useMemo(() => {
     const analysesMap: Record<string, FullAssetAnalysis> = {};
-    dailyTrackedAssets.forEach((item, idx) => {
-      const candles = dailyQueries[idx]?.data?.candles;
+    for (const item of dailyTrackedAssets) {
+      const candles = dailyCandlesMap[item.symbol];
       if (candles && candles.length > 0) {
-        candlesMap[item.symbol] = candles;
-        analysesMap[item.symbol] = runFullAssetAnalysis(
+        analysesMap[item.symbol] = getCachedFullAssetAnalysis(
           item.symbol,
           candles,
           macroQuery.data,
           '1d',
           elliottDegree,
           item.assetClass,
+          macroRegime,
         );
       }
-    });
-    return { dailyCandlesMap: candlesMap, dailyAnalyses: analysesMap };
-  }, [dailyTrackedAssets, dailyQueries, macroQuery.data, elliottDegree]);
+    }
+    return analysesMap;
+  }, [dailyTrackedAssets, dailyCandlesMap, macroQuery.data, macroRegime, elliottDegree]);
 
   const bookmarkedSignals7d: BookmarkedSignalEvent[] = useMemo(
     () => collectBookmarkedSignals(bookmarkedAssets, dailyCandlesMap, dailyAnalyses, 7),
@@ -192,7 +290,7 @@ export function useDashboardIntelligence(
 
   const bookmarkedSignalsLoading =
     bookmarkedAssets.length > 0 &&
-    dailyQueries.some((q) => q.isLoading) &&
+    dailyCombined.anyLoading &&
     bookmarkedSignals7d.length === 0;
 
   const activeCatalogAsset = useMemo(
@@ -205,27 +303,29 @@ export function useDashboardIntelligence(
     if (!candles || candles.length === 0) return null;
     const assetClass =
       activeCatalogAsset?.assetClass ?? inferAssetClass(canonicalActive);
-    return runFullAssetAnalysis(
+    return getCachedFullAssetAnalysis(
       canonicalActive,
       candles,
       macroQuery.data,
       activeTimeframe,
       elliottDegree,
       assetClass,
+      macroRegime,
     );
   }, [
     canonicalActive,
     activeCatalogAsset,
     activeCandlesQuery.data,
     macroQuery.data,
+    macroRegime,
     activeTimeframe,
     elliottDegree,
   ]);
 
   const macroProseReport: ProseReport | null = useMemo(() => {
     if (!macroQuery.data || !macroRegime) return null;
-    const summaries: AssetQuickSummary[] = focusAssets.map((item, idx) => {
-      const q = quoteMap.get(item.symbol) ?? dailyQueries[idx]?.data?.quote;
+    const summaries: AssetQuickSummary[] = focusAssets.map((item) => {
+      const q = quoteMap.get(item.symbol) ?? dailyQuotesMap[item.symbol];
       const an = dailyAnalyses[item.symbol];
       return {
         assetId: item.symbol,
@@ -237,7 +337,7 @@ export function useDashboardIntelligence(
       };
     });
     return generateMacroProseReport(macroQuery.data, macroRegime, summaries);
-  }, [macroQuery.data, macroRegime, focusAssets, quoteMap, dailyQueries, dailyAnalyses]);
+  }, [macroQuery.data, macroRegime, focusAssets, quoteMap, dailyQuotesMap, dailyAnalyses]);
 
   const assetProseReport: ProseReport | null = useMemo(() => {
     if (!activeAnalysis) return null;

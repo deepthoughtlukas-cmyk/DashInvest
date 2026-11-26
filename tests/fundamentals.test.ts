@@ -4,6 +4,11 @@ import {
   parseYahooFundamentals,
   type YahooQuoteSummaryResult,
 } from '../server/providers/yahooProvider.ts';
+import {
+  computePersonalDividendYield,
+  getFxSymbol,
+  normalizeQuoteCurrency,
+} from '../src/engine/dividendYield.ts';
 
 function unixUtc(year: number, month: number, day: number): number {
   return Math.floor(Date.UTC(year, month - 1, day) / 1000);
@@ -174,5 +179,97 @@ describe('Yahoo Fundamentals & Dividend History Engine', () => {
     expect(parsedBtc.circulatingSupply).toBe(20_115_784);
     expect(parsedBtc.valuation.trailingPE).toBeNull();
     expect(parsedBtc.analyst.recommendationLabel).toBeNull();
+  });
+
+  it('computes personal dividend yield (YoC) with same-currency, cross-currency FX & GBp pence conversion', () => {
+    expect(normalizeQuoteCurrency('GBp')).toEqual({ currency: 'GBP', subunitDivisor: 100 });
+    expect(normalizeQuoteCurrency('eur')).toEqual({ currency: 'EUR', subunitDivisor: 1 });
+    expect(getFxSymbol('EUR', 'EUR')).toBeNull();
+    expect(getFxSymbol('EUR', 'USD')).toBe('EURUSD=X');
+    expect(getFxSymbol('EUR', 'GBp')).toBe('EURGBP=X');
+
+    const baseDiv = {
+      yieldPercent: 2.0,
+      annualRate: 4.0,
+      payoutRatioPercent: 40,
+      fiveYearAvgYieldPercent: 2.2,
+      exDividendDate: null,
+      cagr5yPercent: 5,
+      consecutiveYears: 10,
+      annualHistory: [],
+    };
+
+    // 1. Same currency (EUR stock, EUR purchase price 80 -> 4.00 / 80 = 5.00%, delta +3.00 Pp.)
+    const sameCur = computePersonalDividendYield({
+      costBasis: { price: 80, currency: 'EUR', source: 'manual', updatedAt: '2026-11-26T00:00:00Z' },
+      dividend: baseDiv,
+      currentPrice: 200,
+      yahooCurrency: 'EUR',
+    });
+    expect(sameCur.personalYieldPercent).toBe(5);
+    expect(sameCur.deltaPercentagePoints).toBe(3);
+    expect(sameCur.fxConverted).toBe(false);
+    expect(sameCur.needsFxRate).toBe(false);
+
+    // 2. Cross-currency (USD dividend $4.32, EUR cost basis 80, EURUSD=X = 1.08 -> €4.00 / €80 = 5.00%)
+    const crossCur = computePersonalDividendYield({
+      costBasis: { price: 80, currency: 'EUR', source: 'patty', updatedAt: '2026-11-26T00:00:00Z' },
+      dividend: { ...baseDiv, annualRate: 4.32, yieldPercent: 3.1 },
+      currentPrice: 140,
+      yahooCurrency: 'USD',
+      fxRate: 1.08,
+    });
+    expect(crossCur.fxSymbol).toBe('EURUSD=X');
+    expect(crossCur.fxConverted).toBe(true);
+    expect(crossCur.annualDividendInCostCurrency).toBe(4);
+    expect(crossCur.personalYieldPercent).toBe(5);
+    expect(crossCur.deltaPercentagePoints).toBe(1.9);
+
+    // Missing FX rate sets needsFxRate: true
+    const missingFx = computePersonalDividendYield({
+      costBasis: { price: 80, currency: 'EUR', source: 'patty', updatedAt: '2026-11-26T00:00:00Z' },
+      dividend: baseDiv,
+      currentPrice: 200,
+      yahooCurrency: 'USD',
+      fxRate: null,
+    });
+    expect(missingFx.needsFxRate).toBe(true);
+    expect(missingFx.personalYieldPercent).toBeNull();
+
+    // 3. London pence GBp (255 GBp = 2.55 GBP, EURGBP=X = 0.85 -> €3.00 / €50 = 6.00%)
+    const gbpRes = computePersonalDividendYield({
+      costBasis: { price: 50, currency: 'EUR', source: 'patty', updatedAt: '2026-11-26T00:00:00Z' },
+      dividend: { ...baseDiv, annualRate: 255, yieldPercent: 4.2 },
+      currentPrice: 6071,
+      yahooCurrency: 'GBp',
+      fxRate: 0.85,
+    });
+    expect(gbpRes.annualDividendInCostCurrency).toBe(3);
+    expect(gbpRes.personalYieldPercent).toBe(6);
+
+    // 4. Fallback to latest complete annualHistory, then to yieldPercent * currentPrice
+    const histFallback = computePersonalDividendYield({
+      costBasis: { price: 40, currency: 'USD', source: 'manual', updatedAt: '2026-11-26T00:00:00Z' },
+      dividend: {
+        ...baseDiv,
+        annualRate: null,
+        annualHistory: [
+          { year: 2024, amount: 1.6, payments: 4 },
+          { year: 2025, amount: 2.0, payments: 4 },
+          { year: 2026, amount: 0.5, payments: 1, isPartial: true },
+        ],
+      },
+      currentPrice: 100,
+      yahooCurrency: 'USD',
+    });
+    expect(histFallback.personalYieldPercent).toBe(5);
+
+    const yieldFallback = computePersonalDividendYield({
+      costBasis: { price: 50, currency: 'USD', source: 'manual', updatedAt: '2026-11-26T00:00:00Z' },
+      dividend: { ...baseDiv, annualRate: null, yieldPercent: 3.0, annualHistory: [] },
+      currentPrice: 100,
+      yahooCurrency: 'USD',
+    });
+    expect(yieldFallback.personalYieldPercent).toBe(6);
   });
 });

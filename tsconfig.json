@@ -16,5 +16,5 @@
     "skipLibCheck": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "server", "shared", "worker", "scripts", "tests", "e2e"]
+  "include": ["src", "server", "shared", "scripts", "tests", "e2e"]
 }

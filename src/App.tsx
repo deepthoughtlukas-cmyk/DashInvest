@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { FolderTree, X } from 'lucide-react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { useShallow } from 'zustand/react/shallow';
 import { useDashboardStore } from './store/dashboardStore.ts';
 import { useDashboardIntelligence } from './hooks/useMarketData.ts';
-import { useProfileSync } from './hooks/useProfileSync.ts';
 import { TopBar } from './components/layout/TopBar.tsx';
 import { DashboardGrid } from './components/layout/DashboardGrid.tsx';
 import { CatalogExplorerWidget } from './components/widgets/CatalogExplorerWidget.tsx';
-import { ProfileModal } from './components/profile/ProfileModal.tsx';
+import { PattySyncModal } from './components/patty/PattySyncModal.tsx';
+import {
+  PATTY_AUTO_SYNC_STORAGE_KEY,
+  PATTY_BROWSER_STORAGE_KEY,
+  buildPattySyncMeta,
+  normalizePattyInvestments,
+  readBrowserPattyWorkspace,
+  resolvePattyInvestments,
+} from './services/pattySync.ts';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,13 +33,60 @@ const DashboardWorkspace: React.FC = () => {
     catalogAssets,
     activeTimeframe,
     refreshIntervalMs,
-    chartSettings,
-  } = useDashboardStore();
+    elliottDegree,
+  } = useDashboardStore(
+    useShallow((s) => ({
+      activeSymbol: s.activeSymbol,
+      catalogAssets: s.catalogAssets,
+      activeTimeframe: s.activeTimeframe,
+      refreshIntervalMs: s.refreshIntervalMs,
+      elliottDegree: s.chartSettings.elliottDegree,
+    })),
+  );
 
   const [catalogDrawerOpen, setCatalogDrawerOpen] = useState(false);
-  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [pattyModalOpen, setPattyModalOpen] = useState(false);
 
-  const profileSync = useProfileSync();
+  const handleRefreshAll = useCallback(() => {
+    void qc.invalidateQueries();
+  }, [qc]);
+  const handleOpenCatalog = useCallback(() => setCatalogDrawerOpen(true), []);
+  const handleOpenPattySync = useCallback(() => setPattyModalOpen(true), []);
+
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key !== PATTY_BROWSER_STORAGE_KEY) return;
+      try {
+        if (window.localStorage.getItem(PATTY_AUTO_SYNC_STORAGE_KEY) !== 'true') return;
+      } catch {
+        return;
+      }
+      const ws = readBrowserPattyWorkspace();
+      if (!ws?.investments) return;
+      const store = useDashboardStore.getState();
+      const includeZero = store.pattyLastSync?.includeZeroQuantity ?? false;
+      const normalized = normalizePattyInvestments(ws.investments, ws.rules ?? [], includeZero);
+      if (normalized.length === 0) return;
+
+      void resolvePattyInvestments({
+        investments: normalized,
+        overrides: store.pattySymbolOverrides,
+        existingCatalogAssets: store.catalogAssets,
+      }).then((result) => {
+        const meta = buildPattySyncMeta('browser', 'Patty Browser Auto-Sync', result, includeZero);
+        useDashboardStore.getState().syncPattyPortfolio({
+          folders: result.folders,
+          assets: result.assets,
+          overrides: result.overrides,
+          meta,
+          costBasis: result.costBasis,
+        });
+      });
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   const {
     quotesQuery,
@@ -50,7 +105,7 @@ const DashboardWorkspace: React.FC = () => {
     activeSymbol,
     catalogAssets,
     activeTimeframe,
-    chartSettings.elliottDegree,
+    elliottDegree,
     refreshIntervalMs,
   );
 
@@ -65,13 +120,8 @@ const DashboardWorkspace: React.FC = () => {
         macroRegime={macroRegime}
         updatedAt={updatedAt}
         isFetching={isFetching}
-        profileUser={profileSync.user}
-        syncStatus={profileSync.syncStatus}
-        onRefreshAll={() => {
-          void qc.invalidateQueries();
-        }}
-        onOpenCatalog={() => setCatalogDrawerOpen(true)}
-        onOpenProfile={() => setProfileModalOpen(true)}
+        onRefreshAll={handleRefreshAll}
+        onOpenCatalog={handleOpenCatalog}
       />
 
       <main className="mx-auto max-w-[1920px]">
@@ -87,7 +137,8 @@ const DashboardWorkspace: React.FC = () => {
           macroRegime={macroRegime}
           macroProseReport={macroProseReport}
           assetProseReport={assetProseReport}
-          onOpenCatalog={() => setCatalogDrawerOpen(true)}
+          onOpenCatalog={handleOpenCatalog}
+          onOpenPattySync={handleOpenPattySync}
         />
       </main>
 
@@ -114,28 +165,18 @@ const DashboardWorkspace: React.FC = () => {
               <CatalogExplorerWidget
                 quoteMap={quoteMap}
                 onAssetSelected={() => setCatalogDrawerOpen(false)}
+                onOpenPattySync={() => {
+                  setCatalogDrawerOpen(false);
+                  setPattyModalOpen(true);
+                }}
               />
             </div>
           </div>
         </div>
       )}
-      <ProfileModal
-        open={profileModalOpen}
-        onClose={() => setProfileModalOpen(false)}
-        authMode={profileSync.authMode}
-        user={profileSync.user}
-        syncStatus={profileSync.syncStatus}
-        lastSavedAt={profileSync.lastSavedAt}
-        syncError={profileSync.syncError}
-        profilesList={profileSync.profilesList}
-        onRefreshProfiles={profileSync.refreshProfiles}
-        onLoginWithGoogle={profileSync.loginWithGoogle}
-        onRegister={profileSync.register}
-        onLogin={profileSync.login}
-        onLogout={profileSync.logout}
-        onFlushNow={profileSync.flushNow}
-        onUpdateProfile={profileSync.updateProfile}
-        onDeleteAccount={profileSync.deleteAccount}
+      <PattySyncModal
+        open={pattyModalOpen}
+        onClose={() => setPattyModalOpen(false)}
       />
     </div>
   );

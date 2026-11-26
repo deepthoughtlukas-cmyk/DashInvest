@@ -1,11 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   ChevronDown,
   ChevronRight,
   Folder,
   FolderPlus,
+  List,
   Pencil,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   Star,
@@ -16,26 +19,127 @@ import { resolveCanonicalSymbol } from '../../../shared/catalog.ts';
 import type { AssetFolder, CatalogAsset, QuoteSummary } from '../../../shared/types.ts';
 import { useDashboardStore } from '../../store/dashboardStore.ts';
 import { useSymbolSearchQuery } from '../../hooks/useMarketData.ts';
+import { formatNumberDe } from '../../utils/formatters.ts';
 
 interface CatalogExplorerWidgetProps {
   quoteMap: Map<string, QuoteSummary>;
   onAssetSelected?: (symbol: string) => void;
+  onOpenPattySync?: () => void;
 }
 
-const fmtPrice = (val: number, decimals = 2) =>
-  new Intl.NumberFormat('de-DE', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(val);
+const fmtPrice = (val: number, decimals = 2) => formatNumberDe(val, decimals);
 
-export const CatalogExplorerWidget: React.FC<CatalogExplorerWidgetProps> = ({
+interface CatalogAssetRowProps {
+  asset: CatalogAsset;
+  quote: QuoteSummary | undefined;
+  isActive: boolean;
+  indentPx: number;
+  folderOptionElements: React.ReactNode;
+  onSelect: (symbol: string) => void;
+  onToggleBookmark: (symbol: string) => void;
+  onMoveToFolder: (symbol: string, folderId: string) => void;
+  onRemove: (symbol: string) => void;
+}
+
+const CatalogAssetRow: React.FC<CatalogAssetRowProps> = React.memo(
+  ({
+    asset,
+    quote,
+    isActive,
+    indentPx,
+    folderOptionElements,
+    onSelect,
+    onToggleBookmark,
+    onMoveToFolder,
+    onRemove,
+  }) => {
+    const isUp = (quote?.changePercent ?? 0) >= 0;
+
+    return (
+      <div
+        style={{ paddingLeft: `${Math.max(4, indentPx)}px` }}
+        className={`group flex items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 transition ${
+          isActive
+            ? 'border-sky-500/60 bg-sky-500/12'
+            : 'border-transparent bg-slate-900/40 hover:border-slate-800 hover:bg-slate-900/75'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => onSelect(asset.symbol)}
+          className="widget-no-drag min-w-0 flex-1 text-left"
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-xs font-semibold text-slate-100">
+              {asset.shortName}
+            </span>
+            <span className="font-mono-num shrink-0 rounded bg-slate-800/90 px-1 py-0.2 text-[9.5px] text-slate-400">
+              {asset.symbol}
+            </span>
+          </div>
+          {quote ? (
+            <div className="font-mono-num mt-0.5 flex items-center gap-1.5 text-[10.5px]">
+              <span className="text-slate-300">{fmtPrice(quote.price, asset.decimals)}</span>
+              <span className={isUp ? 'text-emerald-400' : 'text-rose-400'}>
+                {isUp ? '+' : ''}
+                {quote.changePercent.toFixed(2)}%
+              </span>
+            </div>
+          ) : (
+            <div className="mt-0.5 truncate text-[10px] text-slate-500">{asset.name}</div>
+          )}
+        </button>
+
+        <div className="widget-no-drag flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => onToggleBookmark(asset.symbol)}
+            aria-label={`Bookmark ${asset.shortName}`}
+            title={asset.bookmarked ? 'Bookmark entfernen' : 'Als Bookmark merken'}
+            className={`rounded p-1 transition ${
+              asset.bookmarked
+                ? 'text-amber-400 hover:bg-amber-500/15'
+                : 'text-slate-600 hover:bg-slate-800 hover:text-amber-300'
+            }`}
+          >
+            <Star className={`h-3.5 w-3.5 ${asset.bookmarked ? 'fill-amber-400' : ''}`} />
+          </button>
+
+          <select
+            aria-label={`Ordner für ${asset.shortName}`}
+            title="In Ordner verschieben"
+            value={asset.folderId}
+            onChange={(e) => onMoveToFolder(asset.symbol, e.target.value)}
+            className="max-w-[74px] truncate rounded border border-slate-800 bg-slate-900/90 px-1 py-0.5 text-[10px] text-slate-400 outline-none focus:border-sky-500"
+          >
+            {folderOptionElements}
+          </select>
+
+          <button
+            type="button"
+            onClick={() => onRemove(asset.symbol)}
+            aria-label={`${asset.shortName} entfernen`}
+            title={`${asset.shortName} aus Katalog entfernen`}
+            className="rounded p-1 text-slate-600 opacity-70 transition hover:bg-slate-800 hover:text-rose-400 group-hover:opacity-100"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+    );
+  },
+);
+
+export const CatalogExplorerWidget: React.FC<CatalogExplorerWidgetProps> = React.memo(({
   quoteMap,
   onAssetSelected,
+  onOpenPattySync,
 }) => {
   const {
     activeSymbol,
     folders,
     catalogAssets,
+    pattyLastSync,
     setActiveSymbol,
     toggleBookmark,
     addAssetToCatalog,
@@ -46,9 +150,28 @@ export const CatalogExplorerWidget: React.FC<CatalogExplorerWidgetProps> = ({
     deleteFolder,
     toggleFolderCollapsed,
     resetCatalogToDefaults,
-  } = useDashboardStore();
+  } = useDashboardStore(
+    useShallow((s) => ({
+      activeSymbol: s.activeSymbol,
+      folders: s.folders,
+      catalogAssets: s.catalogAssets,
+      pattyLastSync: s.pattyLastSync,
+      setActiveSymbol: s.setActiveSymbol,
+      toggleBookmark: s.toggleBookmark,
+      addAssetToCatalog: s.addAssetToCatalog,
+      removeAssetFromCatalog: s.removeAssetFromCatalog,
+      moveAssetToFolder: s.moveAssetToFolder,
+      createFolder: s.createFolder,
+      renameFolder: s.renameFolder,
+      deleteFolder: s.deleteFolder,
+      toggleFolderCollapsed: s.toggleFolderCollapsed,
+      resetCatalogToDefaults: s.resetCatalogToDefaults,
+    })),
+  );
 
   const [viewMode, setViewMode] = useState<'folders' | 'bookmarks'>('folders');
+  const [bookmarkDisplayMode, setBookmarkDisplayMode] = useState<'tree' | 'list'>('tree');
+  const [bookmarkCollapsedIds, setBookmarkCollapsedIds] = useState<Set<string>>(() => new Set());
   const [searchInput, setSearchInput] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
 
@@ -93,8 +216,17 @@ export const CatalogExplorerWidget: React.FC<CatalogExplorerWidgetProps> = ({
     const byId = new Map(folders.map((f) => [f.id, f]));
     const labels = new Map<string, string>();
     for (const f of folders) {
-      const parent = f.parentId ? byId.get(f.parentId) : undefined;
-      labels.set(f.id, parent ? `${parent.name} / ${f.name}` : f.name);
+      const parts: string[] = [f.name];
+      const visited = new Set<string>([f.id]);
+      let curParentId = f.parentId;
+      while (curParentId && !visited.has(curParentId)) {
+        visited.add(curParentId);
+        const parent = byId.get(curParentId);
+        if (!parent) break;
+        parts.unshift(parent.name);
+        curParentId = parent.parentId;
+      }
+      labels.set(f.id, parts.join(' / '));
     }
     return labels;
   }, [folders]);
@@ -126,10 +258,53 @@ export const CatalogExplorerWidget: React.FC<CatalogExplorerWidgetProps> = ({
     return direct + subs.reduce((sum, sub) => sum + countRecursive(sub.id), 0);
   };
 
-  const selectAsset = (symbol: string) => {
-    setActiveSymbol(symbol);
-    onAssetSelected?.(symbol);
+  const bookmarkedByFolder = useMemo(() => {
+    const map = new Map<string, CatalogAsset[]>();
+    for (const a of bookmarkedAssets) {
+      const list = map.get(a.folderId) ?? [];
+      list.push(a);
+      map.set(a.folderId, list);
+    }
+    return map;
+  }, [bookmarkedAssets]);
+
+  const countBookmarkedRecursive = (folderId: string): number => {
+    const direct = bookmarkedByFolder.get(folderId)?.length ?? 0;
+    const subs = childrenByParent.get(folderId) ?? [];
+    return direct + subs.reduce((sum, sub) => sum + countBookmarkedRecursive(sub.id), 0);
   };
+
+  const orphanBookmarkedAssets = useMemo(() => {
+    const folderIds = new Set(folders.map((f) => f.id));
+    return bookmarkedAssets.filter((a) => !folderIds.has(a.folderId));
+  }, [bookmarkedAssets, folders]);
+
+  const toggleBookmarkFolderCollapsed = (folderId: string) => {
+    setBookmarkCollapsedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  };
+
+  const folderOptionElements = useMemo(
+    () =>
+      folders.map((f) => (
+        <option key={f.id} value={f.id}>
+          {folderPathLabels.get(f.id) ?? f.name}
+        </option>
+      )),
+    [folders, folderPathLabels],
+  );
+
+  const selectAsset = useCallback(
+    (symbol: string) => {
+      setActiveSymbol(symbol);
+      onAssetSelected?.(symbol);
+    },
+    [setActiveSymbol, onAssetSelected],
+  );
 
   const handleCreateFolderSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,89 +337,22 @@ export const CatalogExplorerWidget: React.FC<CatalogExplorerWidgetProps> = ({
     );
   }, [catalogAssets, normalizedFilter]);
 
-  const renderAssetRow = (asset: CatalogAsset, indentPx = 0) => {
-    const isActive = resolveCanonicalSymbol(activeSymbol) === asset.symbol;
-    const quote = quoteMap.get(asset.symbol);
-    const isUp = (quote?.changePercent ?? 0) >= 0;
+  const canonicalActive = resolveCanonicalSymbol(activeSymbol);
 
-    return (
-      <div
-        key={asset.symbol}
-        style={{ paddingLeft: `${Math.max(4, indentPx)}px` }}
-        className={`group flex items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 transition ${
-          isActive
-            ? 'border-sky-500/60 bg-sky-500/12'
-            : 'border-transparent bg-slate-900/40 hover:border-slate-800 hover:bg-slate-900/75'
-        }`}
-      >
-        <button
-          type="button"
-          onClick={() => selectAsset(asset.symbol)}
-          className="widget-no-drag min-w-0 flex-1 text-left"
-        >
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-xs font-semibold text-slate-100">
-              {asset.shortName}
-            </span>
-            <span className="font-mono-num shrink-0 rounded bg-slate-800/90 px-1 py-0.2 text-[9.5px] text-slate-400">
-              {asset.symbol}
-            </span>
-          </div>
-          {quote ? (
-            <div className="font-mono-num mt-0.5 flex items-center gap-1.5 text-[10.5px]">
-              <span className="text-slate-300">{fmtPrice(quote.price, asset.decimals)}</span>
-              <span className={isUp ? 'text-emerald-400' : 'text-rose-400'}>
-                {isUp ? '+' : ''}
-                {quote.changePercent.toFixed(2)}%
-              </span>
-            </div>
-          ) : (
-            <div className="mt-0.5 truncate text-[10px] text-slate-500">{asset.name}</div>
-          )}
-        </button>
-
-        <div className="widget-no-drag flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={() => toggleBookmark(asset.symbol)}
-            aria-label={`Bookmark ${asset.shortName}`}
-            title={asset.bookmarked ? 'Bookmark entfernen' : 'Als Bookmark merken'}
-            className={`rounded p-1 transition ${
-              asset.bookmarked
-                ? 'text-amber-400 hover:bg-amber-500/15'
-                : 'text-slate-600 hover:bg-slate-800 hover:text-amber-300'
-            }`}
-          >
-            <Star className={`h-3.5 w-3.5 ${asset.bookmarked ? 'fill-amber-400' : ''}`} />
-          </button>
-
-          <select
-            aria-label={`Ordner für ${asset.shortName}`}
-            title="In Ordner verschieben"
-            value={asset.folderId}
-            onChange={(e) => moveAssetToFolder(asset.symbol, e.target.value)}
-            className="max-w-[74px] truncate rounded border border-slate-800 bg-slate-900/90 px-1 py-0.5 text-[10px] text-slate-400 outline-none focus:border-sky-500"
-          >
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {folderPathLabels.get(f.id) ?? f.name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            onClick={() => removeAssetFromCatalog(asset.symbol)}
-            aria-label={`${asset.shortName} entfernen`}
-            title={`${asset.shortName} aus Katalog entfernen`}
-            className="rounded p-1 text-slate-600 opacity-70 transition hover:bg-slate-800 hover:text-rose-400 group-hover:opacity-100"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      </div>
-    );
-  };
+  const renderAssetRow = (asset: CatalogAsset, indentPx = 0) => (
+    <CatalogAssetRow
+      key={asset.symbol}
+      asset={asset}
+      quote={quoteMap.get(asset.symbol)}
+      isActive={canonicalActive === asset.symbol}
+      indentPx={indentPx}
+      folderOptionElements={folderOptionElements}
+      onSelect={selectAsset}
+      onToggleBookmark={toggleBookmark}
+      onMoveToFolder={moveAssetToFolder}
+      onRemove={removeAssetFromCatalog}
+    />
+  );
 
   const renderFolderBranch = (folder: AssetFolder, depth = 0): React.ReactNode => {
     const subFolders = childrenByParent.get(folder.id) ?? [];
@@ -367,6 +475,51 @@ export const CatalogExplorerWidget: React.FC<CatalogExplorerWidgetProps> = ({
     );
   };
 
+  const renderBookmarkFolderBranch = (folder: AssetFolder, depth = 0): React.ReactNode => {
+    const totalCount = countBookmarkedRecursive(folder.id);
+    if (totalCount === 0) return null;
+
+    const subFolders = childrenByParent.get(folder.id) ?? [];
+    const items = bookmarkedByFolder.get(folder.id) ?? [];
+    const isCollapsed = bookmarkCollapsedIds.has(folder.id);
+
+    return (
+      <div key={folder.id} className="space-y-1">
+        <div
+          style={{ paddingLeft: `${depth * 12}px` }}
+          className="flex items-center justify-between gap-1 rounded-md px-1.5 py-1 hover:bg-slate-800/50"
+        >
+          <button
+            type="button"
+            onClick={() => toggleBookmarkFolderCollapsed(folder.id)}
+            className="widget-no-drag flex min-w-0 flex-1 items-center gap-1.5 text-left"
+          >
+            {isCollapsed ? (
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+            )}
+            <Folder
+              className="h-3.5 w-3.5 shrink-0"
+              style={{ color: folder.color ?? '#f59e0b' }}
+            />
+            <span className="truncate text-xs font-semibold text-slate-200">{folder.name}</span>
+            <span className="font-mono-num shrink-0 rounded bg-amber-500/15 px-1.5 py-0.2 text-[10px] text-amber-300">
+              {totalCount}
+            </span>
+          </button>
+        </div>
+
+        {!isCollapsed && (
+          <div className="space-y-1">
+            {subFolders.map((sub) => renderBookmarkFolderBranch(sub, depth + 1))}
+            {items.map((item) => renderAssetRow(item, (depth + 1) * 10))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const rootFolders = childrenByParent.get(null) ?? [];
 
   return (
@@ -400,17 +553,42 @@ export const CatalogExplorerWidget: React.FC<CatalogExplorerWidgetProps> = ({
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setNewFolderParent('');
-            setCreatingFolder((v) => !v);
-          }}
-          className="flex items-center gap-1 rounded-md border border-slate-800 bg-slate-900/70 px-2 py-1 text-[11px] font-medium text-slate-300 transition hover:border-sky-500/50 hover:text-sky-200"
-        >
-          <FolderPlus className="h-3 w-3 text-sky-400" />
-          + Ordner
-        </button>
+        <div className="flex items-center gap-1">
+          {onOpenPattySync && (
+            <button
+              type="button"
+              onClick={onOpenPattySync}
+              title={
+                pattyLastSync
+                  ? `Patty Sync (${pattyLastSync.syncedCount} Assets · ${new Date(pattyLastSync.syncedAt).toLocaleString('de-DE')})`
+                  : 'Assets & Ordner aus Patty synchronisieren'
+              }
+              className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition ${
+                pattyLastSync
+                  ? 'border-amber-500/45 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
+                  : 'border-slate-800 bg-slate-900/70 text-slate-300 hover:border-amber-500/50 hover:text-amber-200'
+              }`}
+            >
+              <RefreshCw className="h-3 w-3 text-amber-400" />
+              Patty
+              {pattyLastSync && (
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
+              )}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              setNewFolderParent('');
+              setCreatingFolder((v) => !v);
+            }}
+            className="flex items-center gap-1 rounded-md border border-slate-800 bg-slate-900/70 px-2 py-1 text-[11px] font-medium text-slate-300 transition hover:border-sky-500/50 hover:text-sky-200"
+          >
+            <FolderPlus className="h-3 w-3 text-sky-400" />
+            + Ordner
+          </button>
+        </div>
       </div>
 
       {/* Inline Create Folder / Subfolder Bar */}
@@ -590,9 +768,54 @@ export const CatalogExplorerWidget: React.FC<CatalogExplorerWidgetProps> = ({
             )}
           </div>
         ) : viewMode === 'bookmarks' ? (
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {bookmarkedAssets.length > 0 ? (
-              bookmarkedAssets.map((a) => renderAssetRow(a, 4))
+              <>
+                <div className="widget-no-drag flex items-center justify-between px-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                    {bookmarkDisplayMode === 'tree' ? 'Nach Ordnerstruktur' : 'Alle Bookmarks'}
+                  </span>
+                  <div className="flex items-center gap-0.5 rounded border border-slate-800 bg-slate-900/70 p-0.5">
+                    <button
+                      type="button"
+                      title="Bookmark-Ordnerstruktur anzeigen"
+                      aria-label="Bookmark-Ordneransicht"
+                      onClick={() => setBookmarkDisplayMode('tree')}
+                      className={`rounded px-1.5 py-0.5 text-[10px] transition ${
+                        bookmarkDisplayMode === 'tree'
+                          ? 'bg-amber-500/20 text-amber-300'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Folder className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Flache Bookmark-Liste anzeigen"
+                      aria-label="Bookmark-Listenansicht"
+                      onClick={() => setBookmarkDisplayMode('list')}
+                      className={`rounded px-1.5 py-0.5 text-[10px] transition ${
+                        bookmarkDisplayMode === 'list'
+                          ? 'bg-amber-500/20 text-amber-300'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <List className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+
+                {bookmarkDisplayMode === 'tree' ? (
+                  <div className="space-y-1.5">
+                    {rootFolders.map((folder) => renderBookmarkFolderBranch(folder, 0))}
+                    {orphanBookmarkedAssets.map((a) => renderAssetRow(a, 4))}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {bookmarkedAssets.map((a) => renderAssetRow(a, 4))}
+                  </div>
+                )}
+              </>
             ) : (
               <div className="py-4 text-center text-xs text-slate-500">
                 Noch keine Bookmarks gesetzt — klicke auf ⭐ bei einem Wert.
@@ -622,4 +845,4 @@ export const CatalogExplorerWidget: React.FC<CatalogExplorerWidgetProps> = ({
       </div>
     </div>
   );
-};
+});

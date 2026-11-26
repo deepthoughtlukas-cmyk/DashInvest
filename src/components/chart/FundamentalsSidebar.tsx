@@ -1,14 +1,22 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   BarChart3,
+  Check,
   Coins,
   PanelRightClose,
+  Pencil,
   RefreshCw,
+  Trash2,
   TrendingUp,
   Users,
+  X,
 } from 'lucide-react';
+import { resolveCanonicalSymbol } from '../../../shared/catalog.ts';
 import type { AssetFundamentals } from '../../../shared/types.ts';
-import { useAssetFundamentalsQuery } from '../../hooks/useMarketData.ts';
+import { computePersonalDividendYield, getFxSymbol } from '../../engine/dividendYield.ts';
+import { useAssetFundamentalsQuery, useFxRateQuery } from '../../hooks/useMarketData.ts';
+import { useDashboardStore } from '../../store/dashboardStore.ts';
 
 interface FundamentalsSidebarProps {
   symbol: string;
@@ -206,7 +214,7 @@ function hasEquityOrEtfMetrics(f: AssetFundamentals): boolean {
   );
 }
 
-export const FundamentalsSidebar: React.FC<FundamentalsSidebarProps> = ({
+export const FundamentalsSidebar: React.FC<FundamentalsSidebarProps> = React.memo(({
   symbol,
   assetName,
   shortName,
@@ -218,6 +226,56 @@ export const FundamentalsSidebar: React.FC<FundamentalsSidebarProps> = ({
 }) => {
   const fundamentalsQuery = useAssetFundamentalsQuery(symbol, true);
   const data = fundamentalsQuery.data;
+
+  const { personalCostBasis, setPersonalCostBasis } = useDashboardStore(
+    useShallow((s) => ({
+      personalCostBasis: s.personalCostBasis,
+      setPersonalCostBasis: s.setPersonalCostBasis,
+    })),
+  );
+  const canonicalSymbol = resolveCanonicalSymbol(symbol);
+  const costBasis = personalCostBasis[canonicalSymbol] ?? null;
+
+  const [editingCostBasis, setEditingCostBasis] = useState(false);
+  const [costPriceInput, setCostPriceInput] = useState('');
+  const [costCurrencyInput, setCostCurrencyInput] = useState('EUR');
+
+  useEffect(() => {
+    setEditingCostBasis(false);
+  }, [canonicalSymbol]);
+
+  const fxSymbol =
+    costBasis && data ? getFxSymbol(costBasis.currency, data.currency ?? unit) : null;
+  const fxQuery = useFxRateQuery(fxSymbol);
+  const personalDiv = data
+    ? computePersonalDividendYield({
+        costBasis,
+        dividend: data.dividend,
+        currentPrice,
+        yahooCurrency: data.currency ?? unit,
+        fxRate: fxQuery.data ?? null,
+      })
+    : null;
+
+  const openCostEditor = () => {
+    setCostPriceInput(costBasis ? String(costBasis.price).replace('.', ',') : '');
+    setCostCurrencyInput(costBasis?.currency || 'EUR');
+    setEditingCostBasis(true);
+  };
+
+  const handleSaveCostBasis = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = Number.parseFloat(costPriceInput.trim().replace(',', '.'));
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+    setPersonalCostBasis(canonicalSymbol, {
+      price: parsed,
+      currency: costCurrencyInput,
+      source: 'manual',
+    });
+    setEditingCostBasis(false);
+  };
 
   const recentDividends = data?.dividend.annualHistory.slice(-8) ?? [];
   const maxDivAmount = recentDividends.reduce((m, y) => Math.max(m, y.amount), 0);
@@ -472,6 +530,128 @@ export const FundamentalsSidebar: React.FC<FundamentalsSidebarProps> = ({
                             (data.dividend.yieldPercent ?? 0) > 0 ? 'accent' : 'default'
                           }
                         />
+                        <div
+                          className="rounded-md border border-slate-800/80 bg-slate-900/55 px-2 py-1.5"
+                          title={
+                            personalDiv?.deltaPercentagePoints !== null &&
+                            personalDiv?.deltaPercentagePoints !== undefined
+                              ? `Abweichung zur akt. Rendite: ${fmtPct(personalDiv.deltaPercentagePoints, 2, true)}${
+                                  personalDiv.fxConverted && fxQuery.data
+                                    ? ` · FX ${fxSymbol}: ${fmtNum(fxQuery.data, 4)}`
+                                    : ''
+                                }`
+                              : 'Persönliche Dividendenrendite auf deinen Einstandskurs (Yield on Cost)'
+                          }
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="truncate text-[10px] text-slate-400">
+                              Pers. Rendite (YoC)
+                            </span>
+                            {costBasis && (
+                              <button
+                                type="button"
+                                onClick={openCostEditor}
+                                aria-label="Einstandskurs bearbeiten"
+                                title="Einstandskurs bearbeiten"
+                                className="widget-no-drag rounded p-0.5 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+                              >
+                                <Pencil className="h-2.5 w-2.5" />
+                              </button>
+                            )}
+                          </div>
+                          <div
+                            className={`font-mono-num mt-0.5 text-[11.5px] font-semibold ${
+                              personalDiv?.personalYieldPercent !== null &&
+                              personalDiv?.personalYieldPercent !== undefined
+                                ? personalDiv.personalYieldPercent >=
+                                  (data.dividend.yieldPercent ?? 0)
+                                  ? 'text-emerald-300'
+                                  : 'text-sky-300'
+                                : 'text-slate-400'
+                            }`}
+                          >
+                            {costBasis && personalDiv?.needsFxRate && fxQuery.isLoading
+                              ? '…'
+                              : personalDiv?.personalYieldPercent !== null &&
+                                  personalDiv?.personalYieldPercent !== undefined
+                                ? fmtPct(personalDiv.personalYieldPercent, 2)
+                                : '—'}
+                          </div>
+                          <div className="mt-0.5 truncate text-[9.5px] text-slate-500">
+                            {costBasis ? (
+                              <span className="font-mono-num">
+                                EK {fmtNum(costBasis.price, 2)} {costBasis.currency}
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={openCostEditor}
+                                aria-label="Einstandskurs eingeben"
+                                className="widget-no-drag text-sky-400 hover:text-sky-300 hover:underline"
+                              >
+                                + Einstandskurs
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {editingCostBasis && (
+                          <form
+                            onSubmit={handleSaveCostBasis}
+                            className="col-span-2 flex flex-wrap items-center gap-1 rounded-md border border-sky-500/40 bg-slate-950/90 p-1.5"
+                          >
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              autoFocus
+                              aria-label="Einstandskurs"
+                              placeholder="z. B. 125,50"
+                              value={costPriceInput}
+                              onChange={(e) => setCostPriceInput(e.target.value)}
+                              className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-[11px] text-slate-100 outline-none focus:border-sky-500"
+                            />
+                            <select
+                              aria-label="Einstandswährung"
+                              value={costCurrencyInput}
+                              onChange={(e) => setCostCurrencyInput(e.target.value)}
+                              className="rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-[11px] text-slate-200 outline-none focus:border-sky-500"
+                            >
+                              <option value="EUR">EUR</option>
+                              <option value="USD">USD</option>
+                              <option value="CHF">CHF</option>
+                              <option value="GBP">GBP</option>
+                            </select>
+                            <button
+                              type="submit"
+                              aria-label="Einstandskurs speichern"
+                              className="inline-flex items-center gap-0.5 rounded bg-sky-500/25 px-2 py-1 text-[10.5px] font-semibold text-sky-200 hover:bg-sky-500/35"
+                            >
+                              <Check className="h-3 w-3" />
+                              OK
+                            </button>
+                            {costBasis && (
+                              <button
+                                type="button"
+                                aria-label="Einstandskurs löschen"
+                                title="Einstandskurs entfernen"
+                                onClick={() => {
+                                  setPersonalCostBasis(canonicalSymbol, null);
+                                  setEditingCostBasis(false);
+                                }}
+                                className="rounded border border-rose-500/35 bg-rose-500/15 p-1 text-rose-300 hover:bg-rose-500/25"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              aria-label="Einstandskurs-Bearbeitung abbrechen"
+                              onClick={() => setEditingCostBasis(false)}
+                              className="rounded border border-slate-700 p-1 text-slate-400 hover:text-slate-200"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </form>
+                        )}
                         <MetricCell
                           label="Jahresdividende"
                           value={
@@ -719,4 +899,4 @@ export const FundamentalsSidebar: React.FC<FundamentalsSidebarProps> = ({
       </div>
     </aside>
   );
-};
+});

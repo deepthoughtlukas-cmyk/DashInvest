@@ -36,6 +36,7 @@ import {
 } from './indicators.ts';
 import { computeAutoFibonacci, type FibonacciAnalysis } from './fibonacci.ts';
 import { analyzeElliottWaves, type ElliottAnalysisResult } from './elliottWave.ts';
+import { formatNumberDe } from '../utils/formatters.ts';
 
 export interface MacroPillarEvaluation {
   id: 'netLiquidity' | 'm2' | 'creditSpreads' | 'us10y' | 'dxy';
@@ -120,10 +121,7 @@ function clampScore(v: number): number {
 }
 
 function fmtPrice(value: number, decimals = 2): string {
-  return new Intl.NumberFormat('de-DE', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value);
+  return formatNumberDe(value, decimals);
 }
 
 export function evaluateMacroRegime(macro: MacroOverview): MacroRegimeEvaluation {
@@ -333,6 +331,7 @@ export function runFullAssetAnalysis(
   timeframe: Timeframe,
   elliottDegree: ElliottDegree = 'intermediate',
   explicitAssetClass?: AssetClass,
+  precomputedMacroRegime?: MacroRegimeEvaluation | null,
 ): FullAssetAnalysis {
   const symbol = resolveCanonicalSymbol(symbolOrId);
   const assetId = symbolOrId;
@@ -415,7 +414,12 @@ export function runFullAssetAnalysis(
   }
   const chartTechScore = clampScore(chartRaw);
 
-  const macroRegime = macro ? evaluateMacroRegime(macro) : null;
+  const macroRegime =
+    precomputedMacroRegime !== undefined
+      ? precomputedMacroRegime
+      : macro
+        ? evaluateMacroRegime(macro)
+        : null;
   const macroScore = computeAssetMacroScore(symbol, assetClass, macro, macroRegime);
 
   const confluence = clampScore(
@@ -577,6 +581,11 @@ export function runFullAssetAnalysis(
   };
 }
 
+const windowSignalsCache = new WeakMap<
+  FullAssetAnalysis,
+  Map<string, BookmarkedSignalEvent[]>
+>();
+
 /**
  * Extracts all discrete technical signals triggered within the last `windowDays` calendar days
  * for a single asset, using concise plain-German explanations focused on market meaning.
@@ -591,6 +600,12 @@ export function extractTriggeredSignalsInWindow(
   if (candles.length === 0) return [];
 
   const referenceSec = nowSec ?? Math.floor(Date.now() / 1000);
+  const timeBucket = nowSec !== undefined ? String(nowSec) : String(Math.floor(referenceSec / 300));
+  const cacheKey = `${asset.symbol}|${asset.shortName}|${asset.decimals}|${windowDays}|${timeBucket}`;
+  let byKey = windowSignalsCache.get(analysis);
+  const cached = byKey?.get(cacheKey);
+  if (cached) return cached;
+
   const cutoffSec = referenceSec - windowDays * 86_400;
   const results = new Map<string, BookmarkedSignalEvent>();
 
@@ -832,7 +847,13 @@ export function extractTriggeredSignalsInWindow(
     }
   }
 
-  return Array.from(results.values()).sort((a, b) => b.time - a.time);
+  const sorted = Array.from(results.values()).sort((a, b) => b.time - a.time);
+  if (!byKey) {
+    byKey = new Map<string, BookmarkedSignalEvent[]>();
+    windowSignalsCache.set(analysis, byKey);
+  }
+  byKey.set(cacheKey, sorted);
+  return sorted;
 }
 
 /**

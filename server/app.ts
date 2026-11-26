@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import express from 'express';
 import cors from 'cors';
 import {
@@ -5,13 +8,11 @@ import {
   resolveCanonicalSymbol,
 } from '../shared/catalog.ts';
 import type {
-  PersistedWorkspaceState,
   QuoteSummary,
   Timeframe,
 } from '../shared/types.ts';
 import { TtlCache } from './cache.ts';
 import { buildMacroOverview } from './macroOverview.ts';
-import { ProfileStore, ProfileStoreError } from './profileStore.ts';
 import type { MacroDataProvider, MarketDataProvider } from './providers/types.ts';
 import { YahooFinanceProvider } from './providers/yahooProvider.ts';
 import { FredProvider } from './providers/fredProvider.ts';
@@ -24,38 +25,108 @@ export interface CreateAppOptions {
   yahoo?: MarketDataProvider;
   fred?: MacroDataProvider;
   overviewTtlMs?: number;
-  profileStore?: ProfileStore;
-  dataDir?: string;
+  pattyDir?: string;
+  pattyDirs?: string[];
+  allowedOrigins?: string[];
 }
 
-const SESSION_COOKIE = 'dashinvest_session';
-const SESSION_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const DEFAULT_ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
+];
 
-export function parseCookies(header?: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!header) return out;
-  for (const part of header.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq <= 0) continue;
-    const key = part.slice(0, eq).trim();
-    const rawVal = part.slice(eq + 1).trim();
-    if (!key) continue;
-    try {
-      out[key] = decodeURIComponent(rawVal);
-    } catch {
-      out[key] = rawVal;
-    }
-  }
-  return out;
+function buildAllowedOriginSet(customOrigins?: string[]): Set<string> {
+  const envOrigins = (process.env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return new Set([...DEFAULT_ALLOWED_ORIGINS, ...envOrigins, ...(customOrigins ?? [])]);
 }
 
-function sendProfileError(res: express.Response, err: unknown): void {
-  if (err instanceof ProfileStoreError) {
-    res.status(err.statusCode).json({ error: err.message });
-    return;
+export function sanitizePattyWorkspaceJson(
+  rawContent: string,
+  options?: { includeCostBasis?: boolean },
+): string {
+  const includeCostBasis = Boolean(options?.includeCostBasis);
+  const parsed = JSON.parse(rawContent) as {
+    version?: unknown;
+    timestamp?: unknown;
+    investments?: unknown;
+    rules?: unknown;
+  };
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    parsed.version !== 1 ||
+    !Array.isArray(parsed.investments)
+  ) {
+    throw new Error('Invalid Patty workspace format');
   }
-  res.status(500).json({
-    error: err instanceof Error ? err.message : 'Interner Profilfehler',
+
+  const sanitizedInvestments = parsed.investments
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+    .map((inv) => {
+      const currentVal = Number(inv.currentValue) || 0;
+      const qty = Number(inv.quantity) || 0;
+      const isActive = currentVal >= 0.05 && (qty > 0 || currentVal >= 1);
+      const rawPurchasePrice = Number(inv.purchasePrice);
+      const validPurchasePrice =
+        includeCostBasis && Number.isFinite(rawPurchasePrice) && rawPurchasePrice > 0
+          ? rawPurchasePrice
+          : undefined;
+      const customName =
+        typeof inv.customName === 'string' && inv.customName.trim() ? inv.customName.trim() : undefined;
+      const originalName =
+        typeof inv._originalName === 'string' && inv._originalName.trim()
+          ? inv._originalName.trim()
+          : undefined;
+      return {
+        name: typeof inv.name === 'string' ? inv.name : '',
+        ...(customName ? { customName } : {}),
+        ...(originalName ? { _originalName: originalName } : {}),
+        isin: typeof inv.isin === 'string' ? inv.isin : '',
+        type: typeof inv.type === 'string' ? inv.type : 'Aktien',
+        quantity: isActive ? 1 : 0,
+        ...(validPurchasePrice !== undefined ? { purchasePrice: validPurchasePrice } : {}),
+        currentValue: isActive ? 1 : 0,
+        currency: typeof inv.currency === 'string' ? inv.currency : 'EUR',
+        category: typeof inv.category === 'string' ? inv.category : 'Stocks',
+        subcategory: typeof inv.subcategory === 'string' ? inv.subcategory : 'General',
+      };
+    });
+
+  const sanitizedRules = Array.isArray(parsed.rules)
+    ? parsed.rules
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+        .map((rule) => {
+          const customName =
+            typeof rule.customName === 'string' && rule.customName.trim()
+              ? rule.customName.trim()
+              : undefined;
+          const subcategory =
+            typeof rule.subcategory === 'string' && rule.subcategory.trim()
+              ? rule.subcategory.trim()
+              : undefined;
+          return {
+            isin: typeof rule.isin === 'string' ? rule.isin : '',
+            name: typeof rule.name === 'string' ? rule.name : '',
+            ...(customName ? { customName } : {}),
+            category: typeof rule.category === 'string' ? rule.category : 'Stocks',
+            ...(subcategory ? { subcategory } : {}),
+          };
+        })
+    : [];
+
+  return JSON.stringify({
+    version: 1,
+    timestamp:
+      typeof parsed.timestamp === 'string' ? parsed.timestamp : new Date().toISOString(),
+    investments: sanitizedInvestments,
+    rules: sanitizedRules,
   });
 }
 
@@ -64,155 +135,104 @@ export function createApp(options: CreateAppOptions = {}) {
   const fred = options.fred ?? new FredProvider();
   const overviewTtlMs = options.overviewTtlMs ?? 5 * 60_000;
   const overviewCache = new TtlCache();
-  const profileStore = options.profileStore ?? new ProfileStore(options.dataDir);
+  const pattySearchDirs = (() => {
+    if (options.pattyDirs && options.pattyDirs.length > 0) {
+      return options.pattyDirs;
+    }
+    if (options.pattyDir) {
+      return [options.pattyDir];
+    }
+    const envDir = process.env.PATTY_DIR?.trim();
+    if (envDir) {
+      return envDir
+        .split(/[;,]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return [
+      path.join(os.homedir(), 'Downloads'),
+      path.resolve(process.cwd(), '../Stockpicker'),
+    ];
+  })();
+  const allowedOriginSet = buildAllowedOriginSet(options.allowedOrigins);
 
   const app = express();
-  app.use(cors({ origin: true, credentials: true }));
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        if (!origin || allowedOriginSet.has(origin)) {
+          callback(null, true);
+        } else {
+          callback(null, false);
+        }
+      },
+      credentials: true,
+    }),
+  );
   app.use(express.json({ limit: '2mb' }));
-
-  const readSessionToken = (req: express.Request): string | undefined => {
-    const cookies = parseCookies(req.headers.cookie);
-    return cookies[SESSION_COOKIE];
-  };
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, service: 'dashinvest-api', timestamp: new Date().toISOString() });
   });
 
-  // --- User Profile, Auth & Continuous Workspace Persistence ---
-  app.get('/api/auth/profiles', (_req, res) => {
-    res.json({ profiles: profileStore.listPublicProfiles() });
-  });
-
-  app.get('/api/auth/me', (req, res) => {
-    const token = readSessionToken(req);
-    const session = profileStore.getSession(token);
-    if (!session) {
-      res.json({ authenticated: false, user: null, workspace: null });
-      return;
-    }
-    res.json({
-      authenticated: true,
-      user: session.user,
-      workspace: session.workspace,
-    });
-  });
-
-  app.post('/api/auth/register', (req, res) => {
+  app.get('/api/patty/local-workspace', (req, res) => {
     try {
-      const body = (req.body ?? {}) as {
-        username?: string;
-        displayName?: string;
-        password?: string;
-        avatarColor?: string;
-        initialWorkspace?: PersistedWorkspaceState | null;
-      };
-      const result = profileStore.register({
-        username: String(body.username ?? ''),
-        displayName: body.displayName,
-        password: String(body.password ?? ''),
-        avatarColor: body.avatarColor,
-        initialWorkspace: body.initialWorkspace ?? null,
-      });
-      res.cookie(SESSION_COOKIE, result.token, {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: SESSION_COOKIE_MAX_AGE_MS,
-      });
-      res.status(201).json({
-        authenticated: true,
-        user: result.user,
-        workspace: result.workspace,
-      });
-    } catch (err) {
-      sendProfileError(res, err);
-    }
-  });
+      const includeCostBasis =
+        req.query.includeCostBasis === '1' || req.query.includeCostBasis === 'true';
 
-  app.post('/api/auth/login', (req, res) => {
-    try {
-      const body = (req.body ?? {}) as { username?: string; password?: string };
-      const result = profileStore.login(
-        String(body.username ?? ''),
-        String(body.password ?? ''),
-      );
-      res.cookie(SESSION_COOKIE, result.token, {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: SESSION_COOKIE_MAX_AGE_MS,
-      });
+      const candidates: Array<{
+        name: string;
+        dir: string;
+        fullPath: string;
+        stat: fs.Stats;
+      }> = [];
+
+      for (const dir of pattySearchDirs) {
+        if (!dir || !fs.existsSync(dir)) continue;
+        let entries: fs.Dirent[];
+        try {
+          entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        for (const e of entries) {
+          if (!e.isFile() || !/^patty-workspace.*\.json$/i.test(e.name)) continue;
+          const fullPath = path.join(dir, e.name);
+          try {
+            const stat = fs.statSync(fullPath);
+            if (stat.size > 0 && stat.size <= 10 * 1024 * 1024) {
+              candidates.push({ name: e.name, dir, fullPath, stat });
+            }
+          } catch {
+            // ignore unreadable file
+          }
+        }
+      }
+
+      candidates.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+
+      if (candidates.length === 0) {
+        res.json({ found: false });
+        return;
+      }
+
+      const newest = candidates[0];
+      const content = fs.readFileSync(newest.fullPath, 'utf-8');
+      const encrypted = !content.trim().startsWith('{');
+      const responseContent = encrypted
+        ? content
+        : sanitizePattyWorkspaceJson(content, { includeCostBasis });
       res.json({
-        authenticated: true,
-        user: result.user,
-        workspace: result.workspace,
+        found: true,
+        filename: newest.name,
+        folderLabel: path.basename(newest.dir),
+        updatedAt: new Date(newest.stat.mtimeMs).toISOString(),
+        encrypted,
+        sanitized: !encrypted,
+        content: responseContent,
       });
-    } catch (err) {
-      sendProfileError(res, err);
-    }
-  });
-
-  app.post('/api/auth/logout', (req, res) => {
-    const token = readSessionToken(req);
-    profileStore.logout(token);
-    res.clearCookie(SESSION_COOKIE, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-    });
-    res.json({ ok: true });
-  });
-
-  app.put('/api/profile/workspace', (req, res) => {
-    const session = profileStore.getSession(readSessionToken(req));
-    if (!session) {
-      res.status(401).json({ error: 'Nicht angemeldet.' });
-      return;
-    }
-    try {
-      const result = profileStore.saveWorkspace(
-        session.user.id,
-        req.body as PersistedWorkspaceState,
-      );
-      res.json(result);
-    } catch (err) {
-      sendProfileError(res, err);
-    }
-  });
-
-  app.patch('/api/profile', (req, res) => {
-    const session = profileStore.getSession(readSessionToken(req));
-    if (!session) {
-      res.status(401).json({ error: 'Nicht angemeldet.' });
-      return;
-    }
-    try {
-      const body = (req.body ?? {}) as { displayName?: string; avatarColor?: string };
-      const user = profileStore.updateProfile(session.user.id, body);
-      res.json({ user });
-    } catch (err) {
-      sendProfileError(res, err);
-    }
-  });
-
-  app.delete('/api/profile', (req, res) => {
-    const session = profileStore.getSession(readSessionToken(req));
-    if (!session) {
-      res.status(401).json({ error: 'Nicht angemeldet.' });
-      return;
-    }
-    try {
-      const body = (req.body ?? {}) as { password?: string };
-      profileStore.deleteProfile(session.user.id, String(body.password ?? ''));
-      res.clearCookie(SESSION_COOKIE, {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-      });
-      res.json({ ok: true });
-    } catch (err) {
-      sendProfileError(res, err);
+    } catch {
+      res.json({ found: false });
     }
   });
 

@@ -14,15 +14,20 @@ export type AssetClass =
   | 'bonds'
   | 'etf';
 
-export interface UserProfileSummary {
-  id: string;
-  username: string;
-  displayName: string;
-  avatarColor: string;
-  email?: string | null;
-  photoURL?: string | null;
-  provider?: 'local' | 'google' | 'browser';
-  createdAt: string;
+export interface PattySyncMeta {
+  syncedAt: string;
+  sourceType: 'browser' | 'local-file' | 'upload';
+  sourceLabel: string;
+  totalAssets: number;
+  syncedCount: number;
+  unresolvedCount: number;
+  includeZeroQuantity: boolean;
+}
+
+export interface PersonalCostBasis {
+  price: number;
+  currency: string;
+  source: 'patty' | 'manual';
   updatedAt: string;
 }
 
@@ -40,12 +45,9 @@ export interface PersistedWorkspaceState {
   manualFibs: Record<string, unknown>;
   folders: AssetFolder[];
   catalogAssets: CatalogAsset[];
-}
-
-export interface AuthSessionResponse {
-  authenticated: boolean;
-  user: UserProfileSummary | null;
-  workspace: PersistedWorkspaceState | null;
+  pattySymbolOverrides?: Record<string, string>;
+  pattyLastSync?: PattySyncMeta | null;
+  personalCostBasis?: Record<string, PersonalCostBasis>;
 }
 
 export interface CatalogAsset {
@@ -58,6 +60,8 @@ export interface CatalogAsset {
   exchange?: string;
   folderId: string;
   bookmarked: boolean;
+  isin?: string;
+  source?: 'patty';
 }
 
 export interface AssetFolder {
@@ -66,6 +70,7 @@ export interface AssetFolder {
   parentId: string | null;
   color?: string;
   collapsed?: boolean;
+  source?: 'patty';
 }
 
 export interface SymbolSearchResult {

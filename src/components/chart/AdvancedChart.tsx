@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   CandlestickSeries,
   ColorType,
@@ -34,6 +35,7 @@ import {
 } from '../../../shared/catalog.ts';
 import type {
   Candle,
+  CatalogAsset,
   ChartStyle,
   ElliottDegree,
   MacroOverview,
@@ -41,13 +43,13 @@ import type {
   Timeframe,
 } from '../../../shared/types.ts';
 import { useDashboardStore } from '../../store/dashboardStore.ts';
-import { useAssetCandlesQuery } from '../../hooks/useMarketData.ts';
+import { getCachedFullAssetAnalysis, useAssetCandlesQuery } from '../../hooks/useMarketData.ts';
 import { toHeikinAshi } from '../../engine/movingAverages.ts';
 import { computeFibonacciFromAnchors, type FibAnchor } from '../../engine/fibonacci.ts';
-import { runFullAssetAnalysis } from '../../engine/signals.ts';
 import { FibonacciPrimitive } from './primitives/FibonacciPrimitive.ts';
 import { ElliottWavePrimitive } from './primitives/ElliottWavePrimitive.ts';
 import { FundamentalsSidebar } from './FundamentalsSidebar.tsx';
+import { formatNumberDe } from '../../utils/formatters.ts';
 
 interface AdvancedChartProps {
   lockedSymbol?: string;
@@ -65,13 +67,51 @@ const TIMEFRAMES: Array<{ id: Timeframe; label: string }> = [
   { id: '1w', label: '1W' },
 ];
 
-const fmtPrice = (val: number, decimals = 2) =>
-  new Intl.NumberFormat('de-DE', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(val);
+const fmtPrice = (val: number, decimals = 2) => formatNumberDe(val, decimals);
 
-export const AdvancedChart: React.FC<AdvancedChartProps> = ({
+interface QuickAssetTabsProps {
+  tabs: CatalogAsset[];
+  activeSymbol: string;
+  quoteMap: Map<string, QuoteSummary>;
+  onSelect: (symbol: string) => void;
+}
+
+const QuickAssetTabs: React.FC<QuickAssetTabsProps> = React.memo(
+  ({ tabs, activeSymbol, quoteMap, onSelect }) => (
+    <>
+      {tabs.map((item) => {
+        const q = quoteMap.get(item.symbol);
+        const active = item.symbol === activeSymbol;
+        const up = (q?.changePercent ?? 0) >= 0;
+        return (
+          <button
+            key={item.symbol}
+            type="button"
+            onClick={() => onSelect(item.symbol)}
+            className={`widget-no-drag flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition ${
+              active
+                ? 'border-sky-500/60 bg-sky-500/15 text-slate-100'
+                : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+            }`}
+          >
+            <span className="font-semibold">{item.shortName}</span>
+            {q && (
+              <span className="font-mono-num text-[11px] text-slate-300">
+                {fmtPrice(q.price, item.decimals)}
+                <span className={`ml-1 ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {up ? '+' : ''}
+                  {q.changePercent.toFixed(2)}%
+                </span>
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </>
+  ),
+);
+
+export const AdvancedChart: React.FC<AdvancedChartProps> = React.memo(({
   lockedSymbol,
   macro,
   quoteMap,
@@ -92,7 +132,28 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
     updateChartSetting,
     setManualFib,
     toggleBookmark,
-  } = useDashboardStore();
+  } = useDashboardStore(
+    useShallow((s) => ({
+      activeSymbol: s.activeSymbol,
+      activeTimeframe: s.activeTimeframe,
+      refreshIntervalMs: s.refreshIntervalMs,
+      showFundamentalsSidebar: s.showFundamentalsSidebar,
+      chartSettings: s.chartSettings,
+      manualFibs: s.manualFibs,
+      catalogAssets: s.catalogAssets,
+      setActiveSymbol: s.setActiveSymbol,
+      setActiveTimeframe: s.setActiveTimeframe,
+      setShowFundamentalsSidebar: s.setShowFundamentalsSidebar,
+      updateChartSetting: s.updateChartSetting,
+      setManualFib: s.setManualFib,
+      toggleBookmark: s.toggleBookmark,
+    })),
+  );
+
+  const handleSelectQuickSymbol = useCallback(
+    (sym: string) => setActiveSymbol(sym),
+    [setActiveSymbol],
+  );
 
   const [localTimeframe, setLocalTimeframe] = useState<Timeframe>(activeTimeframe);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -153,7 +214,7 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
 
   const analysis = useMemo(() => {
     if (candles.length === 0) return null;
-    return runFullAssetAnalysis(
+    return getCachedFullAssetAnalysis(
       symbol,
       candles,
       macro,
@@ -570,14 +631,20 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
     const adxMap = new Map(analysis.adx.map((p) => [p.time, p.adx]));
     const candleMap = new Map(candles.map((c) => [c.time, c]));
 
+    let lastHoverTime: number | null = null;
     chart.subscribeCrosshairMove((param) => {
       if (!param.time) {
-        setHoverOhlc(null);
+        if (lastHoverTime !== null) {
+          lastHoverTime = null;
+          setHoverOhlc(null);
+        }
         return;
       }
       const t = Number(param.time);
+      if (lastHoverTime === t) return;
       const bar = candleMap.get(t);
       if (!bar) return;
+      lastHoverTime = t;
       setHoverOhlc({
         o: bar.open,
         h: bar.high,
@@ -697,34 +764,12 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
           {!lockedSymbol ? (
             <>
-              {quickTabs.map((item) => {
-                const q = quoteMap.get(item.symbol);
-                const active = item.symbol === symbol;
-                const up = (q?.changePercent ?? 0) >= 0;
-                return (
-                  <button
-                    key={item.symbol}
-                    type="button"
-                    onClick={() => setActiveSymbol(item.symbol)}
-                    className={`widget-no-drag flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition ${
-                      active
-                        ? 'border-sky-500/60 bg-sky-500/15 text-slate-100'
-                        : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
-                    }`}
-                  >
-                    <span className="font-semibold">{item.shortName}</span>
-                    {q && (
-                      <span className="font-mono-num text-[11px] text-slate-300">
-                        {fmtPrice(q.price, item.decimals)}
-                        <span className={`ml-1 ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {up ? '+' : ''}
-                          {q.changePercent.toFixed(2)}%
-                        </span>
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+              <QuickAssetTabs
+                tabs={quickTabs}
+                activeSymbol={symbol}
+                quoteMap={quoteMap}
+                onSelect={handleSelectQuickSymbol}
+              />
 
               {meta.inCatalog && (
                 <button
@@ -1103,4 +1148,4 @@ export const AdvancedChart: React.FC<AdvancedChartProps> = ({
       )}
     </>
   );
-};
+});

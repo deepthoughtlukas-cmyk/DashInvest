@@ -1,76 +1,78 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  browserProfileStore,
-  sanitizeSymbolFileKey,
+  fetchLocalPattyWorkspaceApi,
+  fetchQuotesApi,
   searchCatalogOffline,
 } from '../src/services/apiClient.ts';
-import type { PersistedWorkspaceState } from '../shared/types.ts';
 
-function sampleWorkspace(activeSymbol: string): PersistedWorkspaceState {
-  return {
-    activeSymbol,
-    activeTimeframe: '1d',
-    activePreset: 'analyse-fokus',
-    activeWidgets: ['master-chart'],
-    layouts: {},
-    layoutLocked: false,
-    proseTab: 'macro',
-    proseDepth: 'detailed',
-    showFundamentalsSidebar: true,
-    chartSettings: {},
-    manualFibs: {},
-    folders: [],
-    catalogAssets: [],
-  };
-}
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
-describe('apiClient Helpers & Browser Profile Fallback', () => {
-  it('sanitizes symbols cleanly for static snapshot filenames and searches catalog offline', () => {
-    expect(sanitizeSymbolFileKey('GC=F')).toBe('GC_F');
-    expect(sanitizeSymbolFileKey('GOLD')).toBe('GC_F');
-    expect(sanitizeSymbolFileKey('^GSPC')).toBe('_GSPC');
-    expect(sanitizeSymbolFileKey('DX-Y.NYB')).toBe('DX-Y.NYB');
-    expect(sanitizeSymbolFileKey('NVDA')).toBe('NVDA');
-
+describe('apiClient Local API Helpers', () => {
+  it('searches default catalog offline by name or symbol', () => {
     const matches = searchCatalogOffline('nvidia');
     expect(matches.some((m) => m.symbol === 'NVDA')).toBe(true);
+    expect(searchCatalogOffline('   ')).toEqual([]);
   });
 
-  it('registers, isolates, logs in and deletes multi-user profiles in browser fallback store', () => {
-    const regA = browserProfileStore.register({
-      username: 'user_a',
-      displayName: 'User A',
-      password: 'passA',
-      initialWorkspace: sampleWorkspace('AAPL'),
+  it('calls local /api/patty/local-workspace with optional includeCostBasis query param', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ found: true, filename: 'patty-workspace.json', sanitized: true }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const resDefault = await fetchLocalPattyWorkspaceApi();
+    expect(resDefault.found).toBe(true);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/patty/local-workspace', undefined);
+
+    await fetchLocalPattyWorkspaceApi({ includeCostBasis: true });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/patty/local-workspace?includeCostBasis=1',
+      undefined,
+    );
+  });
+
+  it('chunks large quote requests into 40-symbol batches on /api/market/quotes', async () => {
+    const symbols = Array.from({ length: 45 }, (_, i) => `SYM${i}`);
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      const qs = new URL(url, 'http://127.0.0.1:3001').searchParams.get('symbols') ?? '';
+      const syms = qs.split(',').filter(Boolean);
+      return new Response(
+        JSON.stringify({
+          quotes: syms.map((s) => ({
+            id: s,
+            symbol: s,
+            name: s,
+            shortName: s,
+            price: 100,
+            change: 0,
+            changePercent: 0,
+            prevClose: 100,
+            dayHigh: 100,
+            dayLow: 100,
+            fiftyTwoWeekHigh: 110,
+            fiftyTwoWeekLow: 90,
+            currency: 'USD',
+            unit: 'USD',
+            decimals: 2,
+            updatedAt: '2026-11-26T20:00:00Z',
+          })),
+          failed: [],
+          updatedAt: '2026-11-26T20:00:00Z',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
     });
-    expect(regA.user.username).toBe('user_a');
-    expect(browserProfileStore.getActiveSession()?.user.username).toBe('user_a');
+    vi.stubGlobal('fetch', fetchMock);
 
-    browserProfileStore.logout();
-    expect(browserProfileStore.getActiveSession()).toBeNull();
-
-    const regB = browserProfileStore.register({
-      username: 'user_b',
-      password: 'passB',
-      initialWorkspace: sampleWorkspace('NVDA'),
-    });
-    expect(regB.workspace?.activeSymbol).toBe('NVDA');
-
-    const loginA = browserProfileStore.login('user_a', 'passA');
-    expect(loginA.workspace?.activeSymbol).toBe('AAPL');
-
-    browserProfileStore.saveWorkspace(loginA.user.id, sampleWorkspace('SAP.DE'));
-    expect(browserProfileStore.getActiveSession()?.workspace?.activeSymbol).toBe('SAP.DE');
-
-    const renamed = browserProfileStore.updateProfile(loginA.user.id, {
-      displayName: 'User A Pro',
-    });
-    expect(renamed.displayName).toBe('User A Pro');
-
-    browserProfileStore.deleteProfile(loginA.user.id, 'passA');
-    expect(browserProfileStore.listProfiles().map((p) => p.username)).toEqual(['user_b']);
-
-    browserProfileStore.deleteProfile(regB.user.id, 'passB');
-    expect(browserProfileStore.listProfiles()).toEqual([]);
+    const result = await fetchQuotesApi(symbols);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.quotes).toHaveLength(45);
   });
 });

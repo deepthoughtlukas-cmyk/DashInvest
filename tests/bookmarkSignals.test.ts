@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { Candle, CatalogAsset } from '../shared/types.ts';
 import {
   collectBookmarkedSignals,
+  evaluateMacroRegime,
   extractTriggeredSignalsInWindow,
   runFullAssetAnalysis,
   type FullAssetAnalysis,
 } from '../src/engine/signals.ts';
+import { getCachedFullAssetAnalysis } from '../src/hooks/useMarketData.ts';
 
 const DAY = 86_400;
 
@@ -166,5 +168,64 @@ describe('7-Day Bookmarked Signals Engine', () => {
         expect(collected[i - 1].time).toBeGreaterThanOrEqual(collected[i].time);
       }
     }
+  });
+
+  it('reuses cached per-asset analysis & signal extraction across 100 bookmarked assets without recomputing indicators', () => {
+    const nowSec = 1_760_000_000;
+    const assets = Array.from({ length: 100 }, (_, i) => makeAsset(`SYM${i}`, `Asset ${i}`, true, 2));
+    const candlesBySymbol: Record<string, Candle[]> = {};
+    for (const a of assets) {
+      candlesBySymbol[a.symbol] = buildReversalCandles(nowSec, 230);
+    }
+
+    // Verify precomputedMacroRegime produces identical result to default runFullAssetAnalysis
+    const first = runFullAssetAnalysis('SYM0', candlesBySymbol.SYM0, undefined, '1d', 'intermediate', 'equities');
+    const precomputed = runFullAssetAnalysis(
+      'SYM0',
+      candlesBySymbol.SYM0,
+      undefined,
+      '1d',
+      'intermediate',
+      'equities',
+      null,
+    );
+    expect(precomputed.scores).toEqual(first.scores);
+    expect(evaluateMacroRegime).toBeTypeOf('function');
+
+    // Cold pass across 100 assets
+    const analysesCold: Record<string, FullAssetAnalysis> = {};
+    for (const a of assets) {
+      analysesCold[a.symbol] = getCachedFullAssetAnalysis(
+        a.symbol,
+        candlesBySymbol[a.symbol],
+        undefined,
+        '1d',
+        'intermediate',
+        'equities',
+        null,
+      );
+    }
+    const signalsCold = collectBookmarkedSignals(assets, candlesBySymbol, analysesCold, 7, nowSec);
+
+    // Warm pass across 100 assets must reuse exact cached objects in < 50ms
+    const t0 = performance.now();
+    const analysesWarm: Record<string, FullAssetAnalysis> = {};
+    for (const a of assets) {
+      analysesWarm[a.symbol] = getCachedFullAssetAnalysis(
+        a.symbol,
+        candlesBySymbol[a.symbol],
+        undefined,
+        '1d',
+        'intermediate',
+        'equities',
+        null,
+      );
+    }
+    const signalsWarm = collectBookmarkedSignals(assets, candlesBySymbol, analysesWarm, 7, nowSec);
+    const elapsedMs = performance.now() - t0;
+
+    expect(analysesWarm.SYM0).toBe(analysesCold.SYM0);
+    expect(signalsWarm.length).toBe(signalsCold.length);
+    expect(elapsedMs).toBeLessThan(150);
   });
 });

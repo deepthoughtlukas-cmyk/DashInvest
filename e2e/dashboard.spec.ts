@@ -425,9 +425,22 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     await expect(sidebar.getByText('KBV')).toBeVisible();
     await expect(sidebar.getByText('Gewinnwachstum')).toBeVisible();
     await expect(sidebar.getByText('Dividendenrendite')).toBeVisible();
+    await expect(sidebar.getByText('Pers. Rendite (YoC)')).toBeVisible();
     await expect(sidebar.getByText('Dividendenhistorie')).toBeVisible();
     await expect(sidebar.getByText('Analysten-Konsens')).toBeVisible();
     await expect(sidebar.getByText(/Kursziel \(Ø\)/)).toBeVisible();
+
+    // 2b. Enter personal purchase price for AAPL -> calculates YoC next to Dividendenrendite and deletes cleanly
+    await sidebar.getByLabel('Einstandskurs eingeben').click();
+    await sidebar.getByLabel('Einstandskurs', { exact: true }).fill('100');
+    await sidebar.getByLabel('Einstandswährung').selectOption('USD');
+    await sidebar.getByLabel('Einstandskurs speichern').click();
+    await expect(sidebar.getByText('EK 100,00 USD')).toBeVisible();
+    await expect(sidebar.getByText(/%/)).not.toHaveCount(0);
+
+    await sidebar.getByLabel('Einstandskurs bearbeiten').click();
+    await sidebar.getByLabel('Einstandskurs löschen').click();
+    await expect(sidebar.getByLabel('Einstandskurs eingeben')).toBeVisible();
 
     // 3. Measure canvas width with sidebar open, collapse via sidebar button -> canvas widens cleanly
     const expandedBox = (await chartCard.locator('canvas').first().boundingBox())!;
@@ -451,115 +464,88 @@ test.describe('DashInvest Real-Browser E2E Verification', () => {
     expect(errors.failedApiResponses).toEqual([]);
   });
 
-  test('registers user profiles, auto-saves view/bookmarks/folders across reload & switches between independent users', async ({
+  test('syncs Patty workspace JSON into hierarchical Bookmark folders and cleans up via Sync entfernen', async ({
     page,
   }) => {
     const errors = attachErrorListeners(page);
     await waitForDashboardReady(page);
 
-    const runId = Date.now().toString(36);
-    const userA = `e2ea_${runId}`;
-    const userB = `e2eb_${runId}`;
-    const pass = 'testpass123';
-
-    const profileBtn = page.getByLabel('Profil und Anmeldung öffnen');
     const catalogCard = widgetCard(page, 'Wertpapier-Katalog & Bookmarks');
-    const chartCard = widgetCard(page, 'Master Chart Terminal');
+    await expect(catalogCard).toBeVisible();
 
-    // 1. Register User A importing current workspace
-    await profileBtn.click();
-    const dialog = page.getByRole('dialog', { name: 'Benutzerprofil & Anmeldung' });
-    await dialog.getByRole('button', { name: 'Neues Profil', exact: true }).click();
-    await dialog.getByPlaceholder('z. B. lukas', { exact: true }).fill(userA);
-    await dialog.getByPlaceholder('z. B. Lukas Portfolio').fill('Profil A');
-    await dialog.getByPlaceholder('Mindestens 4 Zeichen').fill(pass);
-    await dialog.getByRole('button', { name: 'Profil erstellen', exact: true }).click();
+    await catalogCard.getByRole('button', { name: 'Patty', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Patty Portfolio Synchronisation' });
+    await expect(dialog).toBeVisible();
 
-    await expect(profileBtn.getByText('Profil A')).toBeVisible({ timeout: 15_000 });
-    await dialog.getByLabel('Profil-Dialog schließen').click();
+    const samplePattyWorkspace = {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      investments: [
+        {
+          name: 'NVIDIA CORP.',
+          isin: 'US67066G1040',
+          type: 'Aktien',
+          quantity: 5,
+          currentValue: 700,
+          currency: 'EUR',
+          category: 'Stocks',
+          subcategory: 'AI',
+        },
+        {
+          name: 'DT.BOERSE COM. XETRA-GOLD',
+          isin: 'DE000A0S9GB0',
+          type: 'Edelmetalle',
+          quantity: 10,
+          currentValue: 1200,
+          currency: 'EUR',
+          category: 'Safe-Haven Gold',
+          subcategory: 'ETF',
+        },
+        {
+          name: 'Ethereum',
+          isin: 'BPNDA5X00000',
+          type: 'Fremdwährungen',
+          quantity: 1,
+          currentValue: 2000,
+          currency: 'EUR',
+          category: 'Altcoins',
+          subcategory: 'Ethereum',
+        },
+      ],
+      rules: [],
+    };
 
-    // 2. Customize User A view: bookmark Apple, create folder ProfilA-Fokus, select AAPL, collapse Fundamental sidebar
-    await catalogCard.getByRole('button', { name: 'Bookmark Apple' }).click();
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await catalogCard.getByRole('button', { name: '+ Ordner', exact: true }).click();
-    await catalogCard.getByPlaceholder(/Ordnername/).fill('ProfilA-Fokus');
-    await catalogCard.getByRole('button', { name: 'Erstellen', exact: true }).click();
-    await expect(catalogCard.getByRole('button', { name: /^ProfilA-Fokus \d+$/ })).toBeVisible();
+    await dialog.getByLabel('Patty Workspace-Datei auswählen').setInputFiles({
+      name: 'patty-sample.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(samplePattyWorkspace), 'utf-8'),
+    });
 
-    await catalogCard.getByRole('button', { name: /AAPL/ }).click();
-    await expect(chartCard.getByText(/Apple Inc\./).first()).toBeVisible({ timeout: 20_000 });
+    await expect(dialog.getByText('3 Bookmarks synchronisiert', { exact: true })).toBeVisible({
+      timeout: 25_000,
+    });
+    await dialog.getByLabel('Patty-Sync schließen').click();
+    await expect(dialog).toBeHidden();
 
-    await chartCard.getByRole('button', { name: 'Fundamental-Sidebar einklappen' }).click();
-    await expect(chartCard.getByLabel('Fundamentaldaten-Sidebar')).toBeHidden();
+    // Verify Patty folder hierarchy in Ordner tab
+    await expect(catalogCard.getByRole('button', { name: /^Patty \d+$/ })).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /^Safe-Haven Gold \d+$/ })).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /^Altcoins \d+$/ })).toBeVisible();
 
-    // Wait for continuous server auto-save completion
-    await expect(profileBtn.getByText('Gespeichert')).toBeVisible({ timeout: 15_000 });
+    // Verify Bookmarks tab preserves exact folder structure
+    await catalogCard.getByRole('button', { name: /Bookmarks \(\d+\)/ }).click();
+    await expect(catalogCard.getByText('Nach Ordnerstruktur')).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /^Patty \d+$/ })).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /^Safe-Haven Gold \d+$/ })).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /4GLD\.DE/ })).toBeVisible();
+    await expect(catalogCard.getByRole('button', { name: /ETH-USD/ })).toBeVisible();
 
-    // 3. Reload browser -> session cookie restores User A + exact saved view & bookmarks
-    await page.reload();
-    await expect(page.getByText(/Makro:/)).toBeVisible({ timeout: 25_000 });
-    await expect(profileBtn.getByText('Profil A')).toBeVisible({ timeout: 15_000 });
-    await expect(catalogCard.getByRole('button', { name: /^ProfilA-Fokus \d+$/ })).toBeVisible();
-    await expect(chartCard.getByText(/Apple Inc\./).first()).toBeVisible({ timeout: 20_000 });
-    await expect(chartCard.getByLabel('Fundamentaldaten-Sidebar')).toBeHidden();
-
-    // 4. Logout User A -> resets cleanly back to guest state
-    await profileBtn.click();
-    await dialog.getByRole('button', { name: /Abmelden \/ Profil wechseln/ }).click();
-    await expect(profileBtn.getByText('Profil / Anmelden')).toBeVisible({ timeout: 15_000 });
-    await expect(catalogCard.getByRole('button', { name: /^ProfilA-Fokus \d+$/ })).toBeHidden();
-
-    // 5. Register User B with clean workspace -> add ProfilB-Fokus -> save -> logout
-    await dialog.getByRole('button', { name: 'Neues Profil', exact: true }).click();
-    await dialog.getByPlaceholder('z. B. lukas', { exact: true }).fill(userB);
-    await dialog.getByPlaceholder('z. B. Lukas Portfolio').fill('Profil B');
-    await dialog.getByPlaceholder('Mindestens 4 Zeichen').fill(pass);
-    const importCheckbox = dialog.getByRole('checkbox');
-    if (await importCheckbox.isChecked()) {
-      await importCheckbox.uncheck();
-    }
-    await dialog.getByRole('button', { name: 'Profil erstellen', exact: true }).click();
-
-    await expect(profileBtn.getByText('Profil B')).toBeVisible({ timeout: 15_000 });
-    await dialog.getByLabel('Profil-Dialog schließen').click();
-    await expect(catalogCard.getByRole('button', { name: /^ProfilA-Fokus \d+$/ })).toBeHidden();
-
-    await catalogCard.getByRole('button', { name: '+ Ordner', exact: true }).click();
-    await catalogCard.getByPlaceholder(/Ordnername/).fill('ProfilB-Fokus');
-    await catalogCard.getByRole('button', { name: 'Erstellen', exact: true }).click();
-    await expect(catalogCard.getByRole('button', { name: /^ProfilB-Fokus \d+$/ })).toBeVisible();
-    await expect(profileBtn.getByText('Gespeichert')).toBeVisible({ timeout: 15_000 });
-
-    await profileBtn.click();
-    await dialog.getByRole('button', { name: /Abmelden \/ Profil wechseln/ }).click();
-
-    // 6. Log back in as User A -> proves server workspace restored ProfilA-Fokus and kept User B isolated
-    await dialog.getByPlaceholder('z. B. lukas', { exact: true }).fill(userA);
-    await dialog.getByPlaceholder('••••••••').fill(pass);
-    await dialog.getByRole('button', { name: 'Jetzt anmelden', exact: true }).click();
-    await expect(profileBtn.getByText('Profil A')).toBeVisible({ timeout: 15_000 });
-    await dialog.getByLabel('Profil-Dialog schließen').click();
-
-    await expect(catalogCard.getByRole('button', { name: /^ProfilA-Fokus \d+$/ })).toBeVisible();
-    await expect(catalogCard.getByRole('button', { name: /^ProfilB-Fokus \d+$/ })).toBeHidden();
-    await expect(chartCard.getByLabel('Fundamentaldaten-Sidebar')).toBeHidden();
-
-    // 7. Cleanly delete both temporary E2E profiles via UI
-    await profileBtn.click();
-    await dialog.getByRole('button', { name: /Profil dauerhaft löschen/ }).click();
-    await dialog.getByPlaceholder('Passwort bestätigen').fill(pass);
-    await dialog.getByRole('button', { name: 'Löschen', exact: true }).click();
-    await expect(profileBtn.getByText('Profil / Anmelden')).toBeVisible({ timeout: 15_000 });
-
-    await dialog.getByPlaceholder('z. B. lukas', { exact: true }).fill(userB);
-    await dialog.getByPlaceholder('••••••••').fill(pass);
-    await dialog.getByRole('button', { name: 'Jetzt anmelden', exact: true }).click();
-    await expect(profileBtn.getByText('Profil B')).toBeVisible({ timeout: 15_000 });
-    await dialog.getByRole('button', { name: /Profil dauerhaft löschen/ }).click();
-    await dialog.getByPlaceholder('Passwort bestätigen').fill(pass);
-    await dialog.getByRole('button', { name: 'Löschen', exact: true }).click();
-    await expect(profileBtn.getByText('Profil / Anmelden')).toBeVisible({ timeout: 15_000 });
-    await dialog.getByLabel('Profil-Dialog schließen').click();
+    // Cleanly remove Patty sync
+    await catalogCard.getByRole('button', { name: 'Patty', exact: true }).click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Sync entfernen' }).click();
+    await dialog.getByLabel('Patty-Sync schließen').click();
+    await expect(catalogCard.getByRole('button', { name: /^Patty \d+$/ })).toBeHidden();
 
     expect(errors.pageErrors).toEqual([]);
     expect(errors.consoleErrors).toEqual([]);

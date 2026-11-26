@@ -3,6 +3,7 @@ import { createJSONStorage, persist, type StateStorage } from 'zustand/middlewar
 import type { ResponsiveLayouts } from 'react-grid-layout';
 import {
   DEFAULT_CATALOG_ASSETS,
+  DEFAULT_CATALOG_BY_SYMBOL,
   DEFAULT_FOLDERS,
   resolveCanonicalSymbol,
 } from '../../shared/catalog.ts';
@@ -11,7 +12,9 @@ import type {
   CatalogAsset,
   ChartStyle,
   ElliottDegree,
+  PattySyncMeta,
   PersistedWorkspaceState,
+  PersonalCostBasis,
   Timeframe,
 } from '../../shared/types.ts';
 import type { FibAnchor } from '../engine/fibonacci.ts';
@@ -268,6 +271,9 @@ interface DashboardState {
   manualFibs: Record<string, ManualFibPair>;
   folders: AssetFolder[];
   catalogAssets: CatalogAsset[];
+  pattySymbolOverrides: Record<string, string>;
+  pattyLastSync: PattySyncMeta | null;
+  personalCostBasis: Record<string, PersonalCostBasis>;
   setActiveSymbol: (symbol: string) => void;
   setActiveTimeframe: (tf: Timeframe) => void;
   applyPreset: (preset: PresetId) => void;
@@ -290,6 +296,19 @@ interface DashboardState {
   deleteFolder: (folderId: string) => void;
   toggleFolderCollapsed: (folderId: string) => void;
   resetCatalogToDefaults: () => void;
+  syncPattyPortfolio: (payload: {
+    folders: AssetFolder[];
+    assets: CatalogAsset[];
+    overrides: Record<string, string>;
+    meta: PattySyncMeta;
+    costBasis?: Record<string, PersonalCostBasis>;
+  }) => void;
+  setPattySymbolOverride: (pattyKey: string, symbol: string | null) => void;
+  setPersonalCostBasis: (
+    symbol: string,
+    entry: { price: number; currency: string; source?: 'patty' | 'manual' } | null,
+  ) => void;
+  clearPattySync: () => void;
   hydrateWorkspace: (snapshot: Partial<PersistedWorkspaceState> | null) => void;
   resetWorkspaceToDefaults: () => void;
 }
@@ -327,6 +346,9 @@ export function extractWorkspaceSnapshot(state: DashboardState): PersistedWorksp
     manualFibs: { ...state.manualFibs },
     folders: state.folders.map((f) => ({ ...f })),
     catalogAssets: state.catalogAssets.map((a) => ({ ...a })),
+    pattySymbolOverrides: { ...state.pattySymbolOverrides },
+    pattyLastSync: state.pattyLastSync ? { ...state.pattyLastSync } : null,
+    personalCostBasis: { ...state.personalCostBasis },
   };
 }
 
@@ -347,6 +369,9 @@ export const useDashboardStore = create<DashboardState>()(
       manualFibs: {},
       folders: DEFAULT_FOLDERS.map((f) => ({ ...f })),
       catalogAssets: DEFAULT_CATALOG_ASSETS.map((a) => ({ ...a })),
+      pattySymbolOverrides: {},
+      pattyLastSync: null,
+      personalCostBasis: {},
 
       setActiveSymbol: (symbol) => set({ activeSymbol: resolveCanonicalSymbol(symbol) }),
       setActiveTimeframe: (tf) => set({ activeTimeframe: tf }),
@@ -572,10 +597,185 @@ export const useDashboardStore = create<DashboardState>()(
         set((state) => ({
           folders: DEFAULT_FOLDERS.map((f) => ({ ...f })),
           catalogAssets: DEFAULT_CATALOG_ASSETS.map((a) => ({ ...a })),
+          pattyLastSync: null,
           activeSymbol: DEFAULT_CATALOG_ASSETS.some((a) => a.symbol === state.activeSymbol)
             ? state.activeSymbol
             : 'GC=F',
         })),
+
+      syncPattyPortfolio: ({
+        folders: incomingFolders,
+        assets: incomingAssets,
+        overrides,
+        meta,
+        costBasis,
+      }) =>
+        set((state) => {
+          const existingCollapsed = new Map(
+            state.folders.map((f) => [f.id, Boolean(f.collapsed)]),
+          );
+          const nextPattyFolders = incomingFolders.map((f) => ({
+            ...f,
+            source: 'patty' as const,
+            collapsed: existingCollapsed.get(f.id) ?? Boolean(f.collapsed),
+          }));
+          const nonPattyFolders = state.folders.filter(
+            (f) => f.source !== 'patty' && !f.id.startsWith('patty-'),
+          );
+
+          const incomingBySymbol = new Map<string, CatalogAsset>();
+          for (const asset of incomingAssets) {
+            const canonical = resolveCanonicalSymbol(asset.symbol);
+            incomingBySymbol.set(canonical, {
+              ...asset,
+              symbol: canonical,
+              bookmarked: true,
+              source: 'patty',
+            });
+          }
+
+          const seenSymbols = new Set<string>();
+          const mergedAssets: CatalogAsset[] = [];
+
+          for (const existing of state.catalogAssets) {
+            const canonical = resolveCanonicalSymbol(existing.symbol);
+            const incoming = incomingBySymbol.get(canonical);
+            if (incoming) {
+              seenSymbols.add(canonical);
+              mergedAssets.push({
+                ...existing,
+                ...incoming,
+                symbol: canonical,
+                bookmarked: true,
+                source: 'patty',
+              });
+            } else if (existing.source === 'patty') {
+              const def = DEFAULT_CATALOG_BY_SYMBOL.get(canonical);
+              if (def) {
+                mergedAssets.push({
+                  ...def,
+                  bookmarked: existing.bookmarked,
+                });
+              }
+            } else {
+              mergedAssets.push(existing);
+            }
+          }
+
+          for (const [canonical, incoming] of incomingBySymbol) {
+            if (!seenSymbols.has(canonical)) {
+              mergedAssets.push(incoming);
+            }
+          }
+
+          let nextCostBasis = state.personalCostBasis;
+          if (costBasis !== undefined) {
+            const mergedCostBasis: Record<string, PersonalCostBasis> = {};
+            // Preserve existing manual entries first; clear prior Patty entries
+            for (const [sym, entry] of Object.entries(state.personalCostBasis)) {
+              if (entry.source === 'manual') {
+                mergedCostBasis[sym] = entry;
+              }
+            }
+            for (const [rawSym, entry] of Object.entries(costBasis)) {
+              const canonical = resolveCanonicalSymbol(rawSym);
+              if (mergedCostBasis[canonical]?.source === 'manual') continue;
+              if (Number.isFinite(entry.price) && entry.price > 0) {
+                mergedCostBasis[canonical] = { ...entry, source: 'patty' };
+              }
+            }
+            nextCostBasis = mergedCostBasis;
+          }
+
+          return {
+            folders: [...nextPattyFolders, ...nonPattyFolders],
+            catalogAssets: mergedAssets,
+            pattySymbolOverrides: {
+              ...state.pattySymbolOverrides,
+              ...overrides,
+            },
+            pattyLastSync: meta,
+            personalCostBasis: nextCostBasis,
+          };
+        }),
+
+      setPattySymbolOverride: (pattyKey, symbol) =>
+        set((state) => {
+          const next = { ...state.pattySymbolOverrides };
+          if (!symbol || !symbol.trim()) {
+            delete next[pattyKey];
+          } else {
+            next[pattyKey] = resolveCanonicalSymbol(symbol);
+          }
+          return { pattySymbolOverrides: next };
+        }),
+
+      setPersonalCostBasis: (symbol, entry) =>
+        set((state) => {
+          const canonical = resolveCanonicalSymbol(symbol);
+          const next = { ...state.personalCostBasis };
+          if (!entry || !Number.isFinite(entry.price) || entry.price <= 0) {
+            delete next[canonical];
+          } else {
+            next[canonical] = {
+              price: entry.price,
+              currency: entry.currency.trim().toUpperCase() || 'EUR',
+              source: entry.source ?? 'manual',
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return { personalCostBasis: next };
+        }),
+
+      clearPattySync: () =>
+        set((state) => {
+          const nonPattyFolders = state.folders.filter(
+            (f) => f.source !== 'patty' && !f.id.startsWith('patty-'),
+          );
+          const nextFolders =
+            nonPattyFolders.length > 0
+              ? nonPattyFolders
+              : DEFAULT_FOLDERS.map((f) => ({ ...f }));
+
+          const nextAssets: CatalogAsset[] = [];
+          for (const existing of state.catalogAssets) {
+            if (existing.source === 'patty') {
+              const def = DEFAULT_CATALOG_BY_SYMBOL.get(resolveCanonicalSymbol(existing.symbol));
+              if (def) {
+                nextAssets.push({
+                  ...def,
+                  bookmarked: existing.bookmarked,
+                });
+              }
+            } else {
+              nextAssets.push(existing);
+            }
+          }
+
+          const finalAssets =
+            nextAssets.length > 0
+              ? nextAssets
+              : DEFAULT_CATALOG_ASSETS.map((a) => ({ ...a }));
+
+          const validActive = finalAssets.some((a) => a.symbol === state.activeSymbol)
+            ? state.activeSymbol
+            : (finalAssets.find((a) => a.bookmarked)?.symbol ?? finalAssets[0]?.symbol ?? 'GC=F');
+
+          const nextCostBasis: Record<string, PersonalCostBasis> = {};
+          for (const [sym, entry] of Object.entries(state.personalCostBasis)) {
+            if (entry.source === 'manual') {
+              nextCostBasis[sym] = entry;
+            }
+          }
+
+          return {
+            folders: nextFolders,
+            catalogAssets: finalAssets,
+            activeSymbol: validActive,
+            pattyLastSync: null,
+            personalCostBasis: nextCostBasis,
+          };
+        }),
 
       hydrateWorkspace: (snapshot) => {
         if (!snapshot) return;
@@ -633,6 +833,18 @@ export const useDashboardStore = create<DashboardState>()(
             Array.isArray(snapshot.catalogAssets) && snapshot.catalogAssets.length > 0
               ? snapshot.catalogAssets.map((a) => ({ ...a }))
               : DEFAULT_CATALOG_ASSETS.map((a) => ({ ...a })),
+          pattySymbolOverrides:
+            snapshot.pattySymbolOverrides && typeof snapshot.pattySymbolOverrides === 'object'
+              ? { ...snapshot.pattySymbolOverrides }
+              : {},
+          pattyLastSync:
+            snapshot.pattyLastSync && typeof snapshot.pattyLastSync === 'object'
+              ? { ...snapshot.pattyLastSync }
+              : null,
+          personalCostBasis:
+            snapshot.personalCostBasis && typeof snapshot.personalCostBasis === 'object'
+              ? { ...snapshot.personalCostBasis }
+              : {},
         });
       },
 
@@ -651,6 +863,9 @@ export const useDashboardStore = create<DashboardState>()(
           manualFibs: {},
           folders: DEFAULT_FOLDERS.map((f) => ({ ...f })),
           catalogAssets: DEFAULT_CATALOG_ASSETS.map((a) => ({ ...a })),
+          pattySymbolOverrides: {},
+          pattyLastSync: null,
+          personalCostBasis: {},
         }),
     }),
     {
@@ -684,6 +899,9 @@ export const useDashboardStore = create<DashboardState>()(
         manualFibs: state.manualFibs,
         folders: state.folders,
         catalogAssets: state.catalogAssets,
+        pattySymbolOverrides: state.pattySymbolOverrides,
+        pattyLastSync: state.pattyLastSync,
+        personalCostBasis: state.personalCostBasis,
       }),
     },
   ),

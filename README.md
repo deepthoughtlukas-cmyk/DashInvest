@@ -11,7 +11,7 @@
 - **Globale Live-Tickersuche:** Beliebige weltweite Aktien, ETFs, Indizes, Rohstoffe oder Kryptowährungen per Yahoo-Finance-Suche direkt in jeden Ordner hinzufügen
 - **Ordner- & Bookmark-Verwaltung:** Eigene Haupt- und Unterordner anlegen, umbenennen, ein-/ausklappen, Werte zwischen Ordnern verschieben, Favoriten mit ⭐ bookmarken (erscheinen automatisch als Schnellzugriff-Tabs im Master-Chart und in der Signal-Matrix)
 - **Timeframes & Charttypen:** `15m`, `1H`, `4H`, `1D`, `1W` · Kerzen, Heikin-Ashi, Linie · Linear-/Log-Skala · Vollbild-Modus
-- **Einklappbare Fundamentaldaten-Sidebar im Master-Chart:** Aktuelle Dividendenrendite, 10J-Dividendenhistorie (inkl. CAGR & Kontinuität), KGV, Forward KGV, KBV, KUV, PEG, Gewinn- & Umsatzwachstum, ROE/Margen, Free Cashflow sowie Analysten-Konsens inkl. Kursziel-Korridor (`/api/market/fundamentals`)
+- **Einklappbare Fundamentaldaten-Sidebar im Master-Chart:** Aktuelle Dividendenrendite inkl. **persönlicher Dividendenrendite (Yield on Cost / YoC)** auf Basis des Einstandskurses, 10J-Dividendenhistorie (inkl. CAGR & Kontinuität), KGV, Forward KGV, KBV, KUV, PEG, Gewinn- & Umsatzwachstum, ROE/Margen, Free Cashflow sowie Analysten-Konsens inkl. Kursziel-Korridor (`/api/market/fundamentals`)
 - **Fibonacci-Engine:** Automatische Swing-Erkennung (Retracements, hervorgehobenes Golden Pocket `0.618–0.650`, Extensions `1.272 / 1.618 / 2.618`) sowie **manuelles Zwei-Punkt-Zeichentool** direkt auf dem Chart
 - **Regelkonforme Elliott-Wellen-Analyse:** ATR-adaptiver ZigZag (`Minor`, `Intermediate`, `Primary`) mit strikter Durchsetzung der 3 Elliott-Kernregeln (W2-Retracement, W3 nicht kürzeste Impulswelle, keine W4/W1-Überschneidung), Invalidierungslinie, Zielkorridor, Konfidenz-Score und Alternativzählung
 - **Gleitende Durchschnitte & Trend-/Momentum-Indikatoren:** EMA 21, SMA 50, SMA 200, VWAP, Supertrend, Bollinger Bänder (inkl. Squeeze), Ichimoku Cloud, Golden/Death Crosses sowie Multi-Pane-Subcharts für **Volumen**, **RSI (14) inkl. Divergenzen**, **MACD** und **ADX / DI+ / DI−**
@@ -29,21 +29,15 @@ Frei verschieb- und skalierbare Widgets (`react-grid-layout`) mit 3 Presets (*An
 - **Bookmark-Signale (7 Tage):** Eigenständiges Widget mit allen ausgelösten Trend-, Momentum- und Fibonacci-Signalen der letzten 7 Tage für sämtliche gesetzten Bookmarks inkl. Richtungs-/Asset-Filter und Klick-Fokus in den Master-Chart
 - **Markt- & Makro-Briefing (Prosa):** Automatisch generierte deutsche Profi-Analyse inkl. *Wichtigste Schlussfolgerungen*, *Kompakt/Ausführlich*-Modus, Markdown-Export und Vollbild-Lesemodus
 
-### 3. Benutzerprofile, Anmeldung & kontinuierliche Speicherung (`server/profileStore.ts` & `src/hooks/useProfileSync.ts`)
-- **Profil-Anmeldung & Registrierung:** Profile können mit Benutzername, Passwort (`scrypt`-Hash) und `HttpOnly`-Session-Cookie erstellt und gewechselt werden (`/api/auth/*`)
-- **Kontinuierliche Auto-Speicherung:** Jede Änderung an Widgets, Layouts, aktiven Symbolen, Chart-Einstellungen, manuellen Fibonacci-Ankern, Ordnern und Bookmarks wird automatisch per Debounce + `keepalive` auf den Server synchronisiert (`/api/profile/workspace`, lokal persistiert unter `data/`) und bleibt nach Neuladen sowie über Profilwechsel hinweg vollständig pro Benutzer erhalten
-
-### 4. GitHub Pages, Live-Worker & Firebase Google-Login (`DEPLOYMENT.md`)
-- **GitHub Pages (`.github/workflows/deploy-pages.yml`):** Automatisches Deployment bei jedem Push auf `main` inkl. täglichem Snapshot-Fallback (`.github` Schedule)
-- **Live-Kurse via Cloudflare Worker (`worker/index.ts`, `worker/wrangler.toml`):** Kostenloser Edge-Proxy für Yahoo Finance & FRED ohne Kreditkarte
-- **Google-Anmeldung & Cloud-Sync (`src/services/firebase.ts`, `firestore.rules`):** Firebase Auth (Google) + Cloud Firestore synchronisieren Bookmarks, Ordner, Chart-Einstellungen und Dashboard-Layout geräteübergreifend
-- **Vollständige Schritt-für-Schritt-Anleitung:** Siehe [DEPLOYMENT.md](DEPLOYMENT.md)
+### 3. Lokaler Betrieb, Privatsphäre & Patty-Portfolio-Sync
+- **Rein lokaler Betrieb & Persistenz:** DashInvest läuft ausschließlich lokal (`127.0.0.1:3001` API + `localhost:5173` Frontend); alle Dashboard-Layouts, Ordner, Bookmarks, Chart-Einstellungen und optionalen Einstandskurse werden automatisch im Browser (`localStorage`) gespeichert — ohne Cloud-Login oder externe Datenbanken.
+- **Patty-Synchronisation (`src/services/pattySync.ts`):** Importiert aktive Assets aus Patty (`patty-workspace*.json`, optional PIN-verschlüsselt) direkt in die hierarchische Bookmark-Ordnerstruktur. Sensible Positionsdaten (Stückzahlen, Gesamtwerte, Depots) werden serverseitig herausgefiltert; die Übernahme von Einstandskursen (pro Stück) für die YoC-Berechnung ist strikt opt-in.
 
 ---
 
 ## Datenquellen & Konfiguration
 
-DashInvest startet **ohne Pflicht-API-Keys** über serverseitig geproxiedte Yahoo-Finance- und öffentliche FRED-CSV-Endpunkte (`fredgraph.csv`). Optionale API-Key-Slots befinden sich in [`.env.example`](.env.example).
+DashInvest startet **ohne Pflicht-API-Keys** über serverseitig geproxiedte Yahoo-Finance- und öffentliche FRED-CSV-Endpunkte (`fredgraph.csv`). Optionale API-Key-Slots sowie `PATTY_DIR` befinden sich in [`.env.example`](.env.example).
 
 ---
 
@@ -55,15 +49,7 @@ npm run dev
 ```
 
 - Frontend (Vite): `http://localhost:5173`
-- API-Proxy (Express): `http://localhost:3001`
-
-### Desktop-Verknüpfung (Windows)
-
-Mit folgendem Befehl wird eine Desktop-Verknüpfung (`DashInvest.lnk`) inkl. eigenem App-Icon angelegt, die Backend + Frontend bei Bedarf automatisch minimiert startet und `http://localhost:5173` direkt im Browser öffnet:
-
-```bash
-npm run install:shortcut
-```
+- API-Proxy (Express, Loopback-only): `http://127.0.0.1:3001`
 
 ### Desktop-Verknüpfung (Windows)
 
